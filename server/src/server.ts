@@ -222,6 +222,14 @@ app.post('/api/notifications', (req, res) => {
   });
 });
 
+// Import routes
+import licenseRoutes from './routes/license.routes';
+import settingsRoutes from './routes/settings.routes';
+
+// Register routes
+app.use('/api/license', licenseRoutes);
+app.use('/api/settings', settingsRoutes);
+
 // Not found middleware
 app.use((req, res) => {
   logToFile(`Route not found: ${req.method} ${req.url}`);
