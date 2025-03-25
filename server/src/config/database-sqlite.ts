@@ -13,7 +13,7 @@ export class DatabaseManager {
         initializeDatabase();
         
         // Connect to the existing database
-        const dbPath = path.resolve(__dirname, '../../data/slabs.db');
+        const dbPath = process.env.DB_FILE || 'data/slabs.db';
         console.log(`Connecting to database at: ${dbPath}`);
         this.instance = new BetterSqlite3(dbPath);
         

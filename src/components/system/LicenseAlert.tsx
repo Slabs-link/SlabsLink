@@ -32,7 +32,7 @@ const LicenseAlert: React.FC<LicenseAlertProps> = ({
     // Altrimenti, recupera le informazioni sulla licenza dal server
     const fetchLicenseInfo = async () => {
       try {
-        const response = await axios.get(`${API_BASE_URL}/settings/license`);
+        const response = await axios.get(`${API_BASE_URL}/license`);
         if (response.data) {
           setLicenseInfo({
             daysUntilExpiry: response.data.daysUntilExpiry || 0,

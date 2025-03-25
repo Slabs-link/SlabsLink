@@ -1,4 +1,5 @@
-import { Pool } from 'pg';
+import { Database } from 'sqlite3';
+import { open } from 'sqlite';
 
 export interface Appointment {
   id: string;
@@ -13,38 +14,43 @@ export interface Appointment {
 }
 
 export class AppointmentModel {
-  constructor(private pool: Pool) {}
+  constructor(private pool: any) {
+    this.pool = pool;
+  }
 
   async create(appointment: Omit<Appointment, 'id'>): Promise<Appointment> {
-    const result = await this.pool.query(
+    const stmt = await this.pool.run(
       `INSERT INTO appointments 
       (patient_name, patient_phone, date, time, notes, notification_sent, synced) 
-      VALUES ($1, $2, $3, $4, $5, $6, $7) 
-      RETURNING *`,
+      VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         appointment.patientName,
         appointment.patientPhone,
         appointment.date,
         appointment.time,
         appointment.notes,
-        false,
-        false
+        0,
+        0
       ]
     );
-    return this.mapRowToAppointment(result.rows[0]);
+    
+    const newAppointment = await this.pool.get(
+      'SELECT * FROM appointments WHERE id = ?',
+      [stmt.lastID]
+    );
+    return this.mapRowToAppointment(newAppointment);
   }
 
   async update(id: string, appointment: Partial<Appointment>): Promise<Appointment> {
-    const result = await this.pool.query(
+    await this.pool.run(
       `UPDATE appointments 
-      SET patient_name = COALESCE($1, patient_name),
-          patient_phone = COALESCE($2, patient_phone),
-          date = COALESCE($3, date),
-          time = COALESCE($4, time),
-          notes = COALESCE($5, notes),
-          synced = false
-      WHERE id = $6
-      RETURNING *`,
+      SET patient_name = COALESCE(?, patient_name),
+          patient_phone = COALESCE(?, patient_phone),
+          date = COALESCE(?, date),
+          time = COALESCE(?, time),
+          notes = COALESCE(?, notes),
+          synced = 0
+      WHERE id = ?`,
       [
         appointment.patientName,
         appointment.patientPhone,
@@ -54,44 +60,48 @@ export class AppointmentModel {
         id
       ]
     );
-    return this.mapRowToAppointment(result.rows[0]);
+    const updatedAppointment = await this.pool.get(
+      'SELECT * FROM appointments WHERE id = ?',
+      [id]
+    );
+    return this.mapRowToAppointment(updatedAppointment);
   }
 
   async getPendingNotifications(): Promise<Appointment[]> {
-    const result = await this.pool.query(
+    const result = await this.pool.all(
       `SELECT * FROM appointments 
       WHERE notification_sent = false 
       AND date >= CURRENT_DATE`
     );
-    return result.rows.map(this.mapRowToAppointment);
+    return result.map(this.mapRowToAppointment);
   }
 
   async getPendingSync(): Promise<Appointment[]> {
-    const result = await this.pool.query(
+    const result = await this.pool.all(
       `SELECT * FROM appointments 
       WHERE synced = false 
       AND date >= CURRENT_DATE`
     );
-    return result.rows.map(this.mapRowToAppointment);
+    return result.map(this.mapRowToAppointment);
   }
 
   async markNotificationSent(id: string): Promise<void> {
-    await this.pool.query(
-      'UPDATE appointments SET notification_sent = true WHERE id = $1',
+    await this.pool.run(
+      'UPDATE appointments SET notification_sent = 1 WHERE id = ?',
       [id]
     );
   }
 
   async markSynced(id: string): Promise<void> {
-    await this.pool.query(
-      'UPDATE appointments SET synced = true WHERE id = $1',
+    await this.pool.run(
+      'UPDATE appointments SET synced = 1 WHERE id = ?',
       [id]
     );
   }
 
   async updateGoogleCalendarEventId(id: string, eventId: string): Promise<void> {
-    await this.pool.query(
-      'UPDATE appointments SET google_calendar_event_id = $1 WHERE id = $2',
+    await this.pool.run(
+      'UPDATE appointments SET google_calendar_event_id = ? WHERE id = ?',
       [eventId, id]
     );
   }

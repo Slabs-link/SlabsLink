@@ -50,6 +50,14 @@ import axios from 'axios';
 import { styled } from '@mui/material/styles';
 import Sidebar from '../common/Sidebar';
 import { Template } from '../../types/template';
+import { databaseConfig } from '../../config/database-sqlite';
+
+type PaginationState = {
+  page: number;
+  pageSize: number;
+  pages: number;
+  total: number;
+};
 
 // Interfaccia per le notifiche
 interface Notification {
@@ -95,7 +103,7 @@ interface FilterState {
 // Interfaccia per la paginazione
 interface PaginationState {
   page: number;
-  limit: number;
+  pageSize: number;
   total: number;
   pages: number;
 }
@@ -124,12 +132,7 @@ const Notifications: React.FC = () => {
     type: '',
     patientId: ''
   });
-  const [pagination, setPagination] = useState<PaginationState>({
-    page: 1,
-    limit: 10,
-    total: 0,
-    pages: 0
-  });
+  const [pagination, setPagination] = useState<PaginationState>({ page: 1, pageSize: 10, pages: 1, total: 0 });
   const [patients, setPatients] = useState<{id: number, first_name: string, last_name: string}[]>([]);
   const [newNotification, setNewNotification] = useState({
     patient_id: '',
@@ -152,7 +155,7 @@ const Notifications: React.FC = () => {
     try {
       const queryParams = new URLSearchParams()
       queryParams.append('page', pagination.page.toString())
-      queryParams.append('limit', pagination.limit.toString())
+      queryParams.append('pageSize', pagination.pageSize.toString())
       
       if (filters.status) queryParams.append('status', filters.status)
       if (filters.type) queryParams.append('type', filters.type)
@@ -165,7 +168,12 @@ const Notifications: React.FC = () => {
       if (!response.data || !response.data.notifications) {
         console.error('API response missing notifications array:', response.data);
         setNotifications([]);
-        setPagination(response.data?.pagination || { page: 1, limit: 10, total: 0, pages: 0 });
+        setPagination({
+          page: response.data?.pagination?.page || 1,
+          pageSize: response.data?.pagination?.pageSize || 10,
+          pages: response.data?.pagination?.pages || 1,
+          /**total: response.data?.pagination?.total || 0*/
+        });
         setStats(response.data?.stats || { pending_count: 0, sent_count: 0, failed_count: 0, total_count: 0 });
         return;
       }
@@ -250,7 +258,7 @@ const Notifications: React.FC = () => {
     fetchNotifications();
     fetchPatients();
     fetchAppointments();
-  }, [pagination.page, filters]);
+  }, [pagination?.page, filters]);
 
   // Gestione del dialogo per inviare una nuova notifica
   const handleOpenSendDialog = () => {

@@ -29,6 +29,7 @@
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.20.1",
     "recharts": "^2.15.1",
+    "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7",
     "yup": "^1.6.1"
   },
@@ -40,6 +41,7 @@
     "@types/react": "^18.2.37",
     "@types/react-dom": "^18.2.15",
     "@types/selenium-webdriver": "^4.1.28",
+    "@types/sqlite3": "^5.1.0",
     "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^6.10.0",
     "@typescript-eslint/parser": "^6.10.0",

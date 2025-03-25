@@ -85,8 +85,6 @@ interface Appointment {
   patient_id: number;
   date: string;
   time: string;
-  appointment_date: string;
-  appointment_time: string;
   duration: number;
   notes?: string;
   status: string;
@@ -195,7 +193,7 @@ export const getAllAppointments = async (req: Request, res: Response) => {
       FROM appointments a
       JOIN users u ON a.patient_id = u.id
       LEFT JOIN appointment_types t ON a.appointment_type_id = t.id
-      ORDER BY a.appointment_date DESC
+      ORDER BY a.date DESC
     `).all();
     
     return res.json(appointments);
@@ -248,8 +246,8 @@ export const createAppointment = async (req: Request, res: Response) => {
       title,
       appointment_type_id: receivedTypeId,
       patient_id, 
-      appointment_date, 
-      appointment_time, 
+      date, 
+      time, 
       duration, 
       notes, 
       status = 'scheduled',
@@ -257,7 +255,7 @@ export const createAppointment = async (req: Request, res: Response) => {
     } = req.body;
     
     // Validate required fields
-    if (!patient_id || !appointment_date || !appointment_time || !duration) {
+    if (!patient_id || !date || !time || !duration) {
       return res.status(400).json({ 
         message: 'Patient ID, appointment date, time and duration are required' 
       });
@@ -282,7 +280,7 @@ export const createAppointment = async (req: Request, res: Response) => {
       // Insert appointment
       const insertStmt = db.prepare(`
         INSERT INTO appointments (
-          title, patient_id, appointment_date, appointment_time, duration, notes, status, appointment_type_id,
+          title, patient_id, date, time, duration, notes, status, appointment_type_id,
           synced, google_calendar_event_id
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
@@ -299,8 +297,8 @@ export const createAppointment = async (req: Request, res: Response) => {
       const result = insertStmt.run(
         finalTitle,
         patient_id,
-        appointment_date,
-        appointment_time,
+        date,
+        time,
         duration,
         notes || null,
         status,
@@ -331,8 +329,8 @@ export const createAppointment = async (req: Request, res: Response) => {
           let message = template.content
             .replace('{first_name}', patient.first_name)
             .replace('{last_name}', patient.last_name)
-            .replace('{appointment_date}', appointment_date)
-            .replace('{appointment_time}', appointment_time);
+            .replace('{date}', date)
+            .replace('{time}', time);
           
           // Insert notification
           db.prepare(`
@@ -398,7 +396,7 @@ export const getAppointmentsByPatientId = async (req: Request, res: Response) =>
       JOIN users u ON a.patient_id = u.id
       LEFT JOIN appointment_types t ON a.appointment_type_id = t.id
       WHERE a.patient_id = ?
-      ORDER BY a.appointment_date, a.appointment_time
+      ORDER BY a.date, a.time
     `).all(patientId);
     
     return res.json({ appointments });
@@ -423,8 +421,8 @@ export const getAppointmentsByDateRange = async (req: Request, res: Response) =>
       SELECT a.*, u.first_name || ' ' || u.last_name as patient_name, u.first_name, u.last_name
       FROM appointments a
       JOIN users u ON a.patient_id = u.id
-      WHERE a.appointment_date BETWEEN ? AND ?
-      ORDER BY a.appointment_date, a.appointment_time
+      WHERE a.date BETWEEN ? AND ?
+      ORDER BY a.date, a.time
     `).all(startDate, endDate);
     
     return res.json(appointments);
@@ -450,8 +448,8 @@ export const getTodayAppointments = async (req: Request, res: Response) => {
       SELECT a.*, u.first_name || ' ' || u.last_name as patient_name, u.first_name, u.last_name
       FROM appointments a
       JOIN users u ON a.patient_id = u.id
-      WHERE a.appointment_date = ?
-      ORDER BY a.appointment_time
+      WHERE a.date = ?
+      ORDER BY a.time
     `).all(formattedDate);
     
     return res.json({ appointments: appointments || [] });
@@ -477,8 +475,8 @@ export const getUpcomingAppointments = async (req: Request, res: Response) => {
       SELECT a.*, u.first_name || ' ' || u.last_name as patient_name, u.first_name, u.last_name
       FROM appointments a
       JOIN users u ON a.patient_id = u.id
-      WHERE a.appointment_date > ? AND a.status = 'scheduled'
-      ORDER BY a.appointment_date, a.appointment_time
+      WHERE a.date > ? AND a.status = 'scheduled'
+      ORDER BY a.date, a.time
       LIMIT 10
     `).all(formattedDate);
     
@@ -547,8 +545,8 @@ export const updateAppointment = async (req: Request, res: Response) => {
       title,
       appointment_type_id: receivedTypeId,
       patient_id, 
-      appointment_date, 
-      appointment_time, 
+      date, 
+      time, 
       duration, 
       notes, 
       status,
@@ -556,7 +554,7 @@ export const updateAppointment = async (req: Request, res: Response) => {
     } = req.body;
     
     // Validate required fields
-    if (!patient_id || !appointment_date || !appointment_time || !duration) {
+    if (!patient_id || !date || !time || !duration) {
       return res.status(400).json({ 
         message: 'Patient ID, appointment date, time and duration are required' 
       });
@@ -598,8 +596,8 @@ export const updateAppointment = async (req: Request, res: Response) => {
         UPDATE appointments SET
           title = ?,
           patient_id = ?,
-          appointment_date = ?,
-          appointment_time = ?,
+          date = ?,
+          time = ?,
           duration = ?,
           notes = ?,
           status = ?,
@@ -620,8 +618,8 @@ export const updateAppointment = async (req: Request, res: Response) => {
       updateStmt.run(
         finalTitle,
         patient_id,
-        appointment_date,
-        appointment_time,
+        date,
+        time,
         duration,
         notes || null,
         status,
@@ -649,8 +647,8 @@ export const updateAppointment = async (req: Request, res: Response) => {
           let message = template.content
             .replace('{first_name}', patient.first_name)
             .replace('{last_name}', patient.last_name)
-            .replace('{appointment_date}', appointment_date)
-            .replace('{appointment_time}', appointment_time);
+            .replace('{date}', date)
+            .replace('{time}', time);
           
           // Insert notification
           db.prepare(`
