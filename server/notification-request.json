@@ -1,0 +1,25 @@
+{
+  "timestamp": "2025-03-18T18:42:41.994Z",
+  "headers": {
+    "host": "localhost:3002",
+    "connection": "keep-alive",
+    "content-length": "45",
+    "sec-ch-ua-platform": "\"Windows\"",
+    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 OPR/117.0.0.0",
+    "sec-ch-ua": "\"Not A(Brand\";v=\"8\", \"Chromium\";v=\"132\", \"Opera\";v=\"117\"",
+    "content-type": "application/json",
+    "sec-ch-ua-mobile": "?0",
+    "accept": "*/*",
+    "origin": "http://localhost:3002",
+    "sec-fetch-site": "same-origin",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-dest": "empty",
+    "referer": "http://localhost:3002/",
+    "accept-encoding": "gzip, deflate, br, zstd",
+    "accept-language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7"
+  },
+  "body": {
+    "patient_id": "1",
+    "message": "Test messaggio"
+  }
+}

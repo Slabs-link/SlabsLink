@@ -1,0 +1,8 @@
+{
+  "key": "A044B-EF370-62F11-CE017",
+  "expirationDate": "2026-03-21",
+  "features": {
+    "whatsappIntegration": false,
+    "googleCalendarIntegration": true
+  }
+}

@@ -1,0 +1,12 @@
+[
+  { "nome": "Roma", "codice": "H501", "provincia": "RM" },
+  { "nome": "Milano", "codice": "F205", "provincia": "MI" },
+  { "nome": "Napoli", "codice": "F839", "provincia": "NA" },
+  { "nome": "Torino", "codice": "L219", "provincia": "TO" },
+  { "nome": "Palermo", "codice": "G273", "provincia": "PA" },
+  { "nome": "Genova", "codice": "D969", "provincia": "GE" },
+  { "nome": "Bologna", "codice": "A944", "provincia": "BO" },
+  { "nome": "Firenze", "codice": "D612", "provincia": "FI" },
+  { "nome": "Bari", "codice": "A662", "provincia": "BA" },
+  { "nome": "Catania", "codice": "C351", "provincia": "CT" }
+]

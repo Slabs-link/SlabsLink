@@ -1,0 +1,5 @@
+[
+  {"nome": "Roma", "provincia": "RM", "regione": "Lazio", "codice": "H501"},
+  {"nome": "Milano", "provincia": "MI", "regione": "Lombardia", "codice": "F205"},
+  {"nome": "Napoli", "provincia": "NA", "regione": "Campania", "codice": "F839"}
+]

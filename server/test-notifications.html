@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test Notifiche</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+    .form-group { margin-bottom: 15px; }
+    label { display: block; margin-bottom: 5px; }
+    input, textarea { width: 100%; padding: 8px; box-sizing: border-box; }
+    button { padding: 10px 15px; background: #4CAF50; color: white; border: none; cursor: pointer; }
+    #response { margin-top: 20px; padding: 10px; border: 1px solid #ddd; background: #f9f9f9; white-space: pre-wrap; }
+    .status { margin-top: 10px; padding: 5px; border-radius: 3px; }
+    .success { background-color: #dff0d8; color: #3c763d; }
+    .error { background-color: #f2dede; color: #a94442; }
+    .debug { margin-top: 20px; border-top: 1px solid #ddd; padding-top: 10px; }
+  </style>
+</head>
+<body>
+  <h1>Test Notifiche API</h1>
+  
+  <div class="form-group">
+    <label for="server-url">URL Server:</label>
+    <input type="text" id="server-url" value="http://localhost:3002">
+  </div>
+  
+  <h2>GET Notifiche</h2>
+  <button onclick="getNotifications()">Ottieni Notifiche</button>
+  <div id="get-status" class="status"></div>
+  
+  <h2>POST Notifica</h2>
+  <div class="form-group">
+    <label for="patient-id">ID Paziente:</label>
+    <input type="text" id="patient-id" value="1">
+  </div>
+  <div class="form-group">
+    <label for="message">Messaggio:</label>
+    <textarea id="message" rows="3">Test messaggio</textarea>
+  </div>
+  <button onclick="sendNotification()">Invia Notifica</button>
+  <div id="post-status" class="status"></div>
+  
+  <h2>Risposta</h2>
+  <div id="response">Nessuna risposta</div>
+  
+  <div class="debug">
+    <h3>Debug Info</h3>
+    <div id="debug"></div>
+  </div>
+  
+  <script>
+    // Funzione di utilità per aggiornare lo stato
+    function updateStatus(elementId, isSuccess, message) {
+      const element = document.getElementById(elementId);
+      element.textContent = message;
+      element.className = 'status ' + (isSuccess ? 'success' : 'error');
+    }
+    
+    // Funzione di utilità per il debug
+    function logDebug(message) {
+      const debug = document.getElementById('debug');
+      const timestamp = new Date().toISOString();
+      const entry = document.createElement('div');
+      entry.textContent = `[${timestamp}] ${message}`;
+      debug.appendChild(entry);
+    }
+    
+    async function getNotifications() {
+      const serverUrl = document.getElementById('server-url').value;
+      logDebug(`Sending GET request to ${serverUrl}/api/notifications`);
+      
+      try {
+        const response = await fetch(`${serverUrl}/api/notifications`);
+        logDebug(`Received response with status: ${response.status}`);
+        
+        const data = await response.json();
+        document.getElementById('response').textContent = JSON.stringify(data, null, 2);
+        updateStatus('get-status', true, 'Richiesta completata con successo');
+      } catch (error) {
+        logDebug(`Error: ${error.message}`);
+        document.getElementById('response').textContent = `Errore: ${error.message}`;
+        updateStatus('get-status', false, `Errore: ${error.message}`);
+      }
+    }
+    
+    async function sendNotification() {
+      const serverUrl = document.getElementById('server-url').value;
+      const patientId = document.getElementById('patient-id').value;
+      const message = document.getElementById('message').value;
+      
+      const payload = {
+        patient_id: patientId,
+        message: message
+      };
+      
+      logDebug(`Sending POST request to ${serverUrl}/api/notifications with payload: ${JSON.stringify(payload)}`);
+      
+      try {
+        const response = await fetch(`${serverUrl}/api/notifications`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+        
+        logDebug(`Received response with status: ${response.status}`);
+        
+        const data = await response.json();
+        document.getElementById('response').textContent = JSON.stringify(data, null, 2);
+        updateStatus('post-status', true, 'Notifica inviata con successo');
+      } catch (error) {
+        logDebug(`Error: ${error.message}`);
+        document.getElementById('response').textContent = `Errore: ${error.message}`;
+        updateStatus('post-status', false, `Errore: ${error.message}`);
+      }
+    }
+  </script>
+</body>
+</html>

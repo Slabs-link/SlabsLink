@@ -1,0 +1,13 @@
+{
+  "dbHost": "localhost",
+  "dbPort": "5432",
+  "dbName": "slabs",
+  "dbUser": "postgres",
+  "dbPassword": "M4tumb4!",
+  "licenseKey": "1EC95-2BFAE-B04D8-05543",
+  "whatsappBrowserPath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "whatsappDataPath": "C:\\Users\\Ciro Latela\\AppData\\Local\\SlabsLink\\WhatsAppData",
+  "googleClientId": "dd",
+  "googleClientSecret": "dd",
+  "googleRedirectUri": "dd"
+}
