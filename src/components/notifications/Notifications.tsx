@@ -50,14 +50,7 @@ import axios from 'axios';
 import { styled } from '@mui/material/styles';
 import Sidebar from '../common/Sidebar';
 import { Template } from '../../types/template';
-import { databaseConfig } from '../../config/database-sqlite';
-
-type PaginationState = {
-  page: number;
-  pageSize: number;
-  pages: number;
-  total: number;
-};
+import { getDatabase } from '../../../server/src/db/db-sqlite';
 
 // Interfaccia per le notifiche
 interface Notification {
@@ -172,7 +165,7 @@ const Notifications: React.FC = () => {
           page: response.data?.pagination?.page || 1,
           pageSize: response.data?.pagination?.pageSize || 10,
           pages: response.data?.pagination?.pages || 1,
-          /**total: response.data?.pagination?.total || 0*/
+          total: response.data?.pagination?.total || 0
         });
         setStats(response.data?.stats || { pending_count: 0, sent_count: 0, failed_count: 0, total_count: 0 });
         return;

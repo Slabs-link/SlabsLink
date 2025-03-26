@@ -1,4 +1,4 @@
-import { getDatabase } from '../config/database-sqlite';
+import { getDatabase } from '../../../server/src/db/db-sqlite';
 
 export const getDashboardData = async () => {
   try {
