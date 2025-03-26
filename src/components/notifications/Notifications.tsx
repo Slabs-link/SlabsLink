@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Box, 
   Typography, 
@@ -77,6 +77,7 @@ interface NotificationStats {
   sent_count: number;
   failed_count: number;
   total_count: number;
+  categories: {};
 }
 
 // Interfaccia per le notifiche di sistema
@@ -105,10 +106,11 @@ interface PaginationState {
 const Notifications: React.FC = () => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [stats, setStats] = useState<NotificationStats>({
-    pending_count: 0,
     sent_count: 0,
     failed_count: 0,
-    total_count: 0
+    total_count: 0,
+    pending_count: 0,
+    categories: {}
   });
   const [loading, setLoading] = useState(true);
   const [openSendDialog, setOpenSendDialog] = useState(false);
@@ -125,12 +127,12 @@ const Notifications: React.FC = () => {
     type: '',
     patientId: ''
   });
-  const [pagination, setPagination] = useState<PaginationState>({ 
-    page: 1, 
-    pageSize: 10, 
-    pages: 1, 
-    total: 0 
-  });
+  const [pagination, setPagination] = useState<PaginationState>({
+    page: 1,
+    pageSize: 10,
+    pages: 1,
+    total: 0
+});
   const [patients, setPatients] = useState<{id: number, first_name: string, last_name: string}[]>([]);
   const [newNotification, setNewNotification] = useState({
     patient_id: '',
@@ -147,76 +149,58 @@ const Notifications: React.FC = () => {
   // Stato per gli appuntamenti
   const [appointments, setAppointments] = useState<any[]>([]);
 
-  // Funzione per caricare le notifiche
-  const fetchNotifications = async () => {
+  const fetchNotifications = useCallback(async () => {
     setLoading(true);
     try {
-      const queryParams = new URLSearchParams()
-      queryParams.append('page', pagination.page.toString())
-      queryParams.append('pageSize', pagination.pageSize.toString())
+      const queryParams = new URLSearchParams();
+      queryParams.append('page', pagination?.page?.toString() ?? '1');
+      queryParams.append('pageSize', pagination?.pageSize?.toString() ?? '10');
       
-      if (filters.status) queryParams.append('status', filters.status)
-      if (filters.type) queryParams.append('type', filters.type)
-      if (filters.patientId) queryParams.append('patientId', filters.patientId)
+      if (filters.status) queryParams.append('status', filters.status);
+      if (filters.type) queryParams.append('type', filters.type);
+      if (filters.patientId) queryParams.append('patientId', filters.patientId);
       
-      const response = await axios.get(`http://localhost:3001/api/notifications?${queryParams.toString()}`)
+      const response = await axios.get(`http://localhost:3001/api/notifications?${queryParams.toString()}`);
       console.log(response.data)
       
       // Verifichiamo che response.data.notifications esista prima di usare map
-      if (!response.data || !response.data.notifications) {
+      if (!response.data || !Array.isArray(response.data.notifications)) {
         console.error('API response missing notifications array:', response.data);
         setNotifications([]);
         setPagination({
-          page: response.data?.pagination?.page || 1,
-          pageSize: response.data?.pagination?.pageSize || 10,
-          pages: response.data?.pagination?.pages || 1,
-          total: response.data?.pagination?.total || 0
+          page: response.data?.pagination?.page ?? 1,
+          pageSize: response.data?.pagination?.pageSize ?? 10,
+          pages: response.data?.pagination?.pages ?? 1,
+          total: response.data?.pagination?.total ?? 0
         });
-        setStats(response.data?.stats || { pending_count: 0, sent_count: 0, failed_count: 0, total_count: 0 });
+        const statsData = response.data.stats || {};
+        setStats({
+          sent_count: statsData.sent_count ?? 0,
+          failed_count: statsData.failed_count ?? 0,
+          total_count: statsData.total_count ?? 0,
+          pending_count: statsData.pending_count ?? 0,
+          categories: statsData.categories || {}
+        });
         return;
       }
-      
-      // Processiamo le notifiche con la gestione dei nomi utente
-      const processedNotifications = response.data.notifications.map((notif: any) => {
-        // Controlliamo se abbiamo first_name e last_name direttamente
-        if (notif.first_name && notif.last_name) {
-          return {
-            ...notif,
-            patient_name: `${notif.first_name} ${notif.last_name}`
-          };
-        }
-        // Altrimenti usiamo user_full_name o patient_name se disponibili
-        else if (notif.user_full_name) {
-          return {
-            ...notif,
-            patient_name: notif.user_full_name
-          };
-        }
-        // Se non abbiamo nessun nome, verifichiamo se abbiamo patient_id
-        else if (notif.patient_id) {
-          // Cerchiamo il paziente nella lista dei pazienti
-          const patient = patients.find(p => p.id === notif.patient_id)
-          if (patient) {
-            return {
-              ...notif,
-              patient_name: `${patient.first_name} ${patient.last_name}`
-            };
-          }
-        }
-        
-        // Se tutto fallisce, manteniamo il nome esistente o usiamo un placeholder
-        return {
-          ...notif,
-          patient_name: notif.patient_name || 'ID: ' + notif.patient_id
-        };
-      });
-      
-      // Aggiorniamo lo stato con i dati processati
-      setNotifications(processedNotifications);
+
+      setNotifications(response.data.notifications);
       setPagination(response.data.pagination);
-      setStats(response.data.stats);
+      console.log('Dati statistiche:', response.data.stats);
+      console.log('Notifiche ricevute:', response.data.notifications.length);
+
+      const statsData = response.data.stats || {};
+      setStats({
+        sent_count: statsData.sent_count ?? 0,
+        failed_count: statsData.failed_count ?? 0,
+        total_count: statsData.total_count ?? 0,
+        pending_count: statsData.pending_count ?? 0,
+        categories: statsData.categories || {}
+      });
+      console.log('Dati statistiche elaborati:', statsData);
     } catch (error) {
       console.error('Error fetching notifications:', error);
+      setNotifications([]);
       setNotification({
         open: true,
         message: 'Errore nel caricamento delle notifiche',
@@ -225,7 +209,14 @@ const Notifications: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  // Funzione per caricare le notifiche
+  useEffect(() => {
+    const interval = setInterval(fetchNotifications, 5000);
+    return () => clearInterval(interval);
+  }, [fetchNotifications]);
+
 
   // Funzione per caricare i pazienti
   const fetchPatients = async () => {
@@ -346,7 +337,7 @@ const Notifications: React.FC = () => {
       handleCloseDeleteDialog();
       fetchNotifications();
     } catch (error) {
-      console.error('Error deleting notification:', error);
+      console.error('Error deleting notification:', (error as { response?: { data: unknown } })?.response?.data || error);
       setNotification({
         open: true,
         message: 'Errore durante l\'eliminazione della notifica',
@@ -424,7 +415,13 @@ const Notifications: React.FC = () => {
 
   // Gestione della paginazione
   const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => {
-    setPagination(prev => ({ ...prev, page: value }));
+    setPagination(prev => ({
+      ...prev,
+      page: value,
+      pageSize: prev?.pageSize ?? 10,
+      pages: prev?.pages ?? 1,
+      total: prev?.total ?? 0
+    }));
   };
 
   // Funzione per ottenere il colore dello stato
@@ -488,7 +485,8 @@ const Notifications: React.FC = () => {
   const fetchTemplates = async () => {
     try {
       const response = await axios.get('http://localhost:3001/api/templates');
-      setTemplates(response.data.templates);
+      console.log('Template API Response:', response.data);
+      setTemplates(response.data || []);
     } catch (error) {
       console.error('Error fetching templates:', error);
       setNotification({
@@ -581,9 +579,10 @@ const Notifications: React.FC = () => {
       });
 
       await axios.post('http://localhost:3001/api/notifications/template', {
-        patient_id: newNotification.patient_id,
+        user_id: newNotification.patient_id,
         template_id: selectedTemplate,
-        variables: templateVariables
+        variables: templateVariables,
+        appointment_id: appointments.find(a => a.patient_id === newNotification.patient_id)?.id || null
       });
 
       setNotification({
@@ -596,7 +595,7 @@ const Notifications: React.FC = () => {
 
       fetchNotifications();
     } catch (error) {
-      console.error('Error sending notification with template:', error);
+      console.error('Error sending notification with template:', (error as { response?: { data: unknown } })?.response?.data || error);
   
       setNotification({
         open: true,
@@ -682,7 +681,7 @@ const Notifications: React.FC = () => {
                   Totale Notifiche
                 </Typography>
                 <Typography variant="h3" component="div" sx={{ fontWeight: 'bold' }}>
-                  {stats.total_count}
+                  {stats?.total_count ?? 0}
                 </Typography>
               </CardContent>
             </Card>
@@ -699,7 +698,7 @@ const Notifications: React.FC = () => {
                   Inviate
                 </Typography>
                 <Typography variant="h3" component="div" sx={{ fontWeight: 'bold', color: '#4caf50' }}>
-                  {stats.sent_count}
+                  {stats?.sent_count ?? 0}
                 </Typography>
               </CardContent>
             </Card>
@@ -716,7 +715,7 @@ const Notifications: React.FC = () => {
                   In Attesa
                 </Typography>
                 <Typography variant="h3" component="div" sx={{ fontWeight: 'bold', color: '#2196f3' }}>
-                  {stats.pending_count}
+                  {stats?.pending_count ?? 0}
                 </Typography>
                 {stats.pending_count > 0 && (
                   <Button 
@@ -744,7 +743,7 @@ const Notifications: React.FC = () => {
                   Fallite
                 </Typography>
                 <Typography variant="h3" component="div" sx={{ fontWeight: 'bold', color: '#f44336' }}>
-                  {stats.failed_count}
+                  {stats?.failed_count ?? 0}
                 </Typography>
               </CardContent>
             </Card>
@@ -859,7 +858,7 @@ const Notifications: React.FC = () => {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {notifications.map((notification) => (
+                  {notifications?.map((notification) => (
                     <TableRow key={notification.id}>
                       <TableCell>
                         <Chip 
@@ -947,19 +946,21 @@ const Notifications: React.FC = () => {
             
             {/* Paginazione */}
             <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
-              <Pagination 
-                count={pagination.pages} 
-                page={pagination.page} 
-                onChange={handlePageChange}
-                color="primary"
-              />
+              <Pagination
+            count={pagination?.pages ?? 1}
+            page={pagination?.page ?? 1}
+            onChange={handlePageChange}
+            color="primary"
+            showFirstButton
+            showLastButton
+          />
             </Box>
           </>
         )}
 
         {/* Dialog per inviare una nuova notifica */}
         <Dialog 
-          open={openSendDialog} 
+          open={openSendDialog}
           onClose={handleCloseSendDialog}
           maxWidth="md"
           fullWidth
@@ -1005,11 +1006,11 @@ const Notifications: React.FC = () => {
                     <MenuItem value="">
                       <em>Seleziona un template</em>
                     </MenuItem>
-                    {templates.map((template) => (
+                    {templates?.map((template) => (
                       <MenuItem key={template.id} value={template.id}>
                         {template.name}
                       </MenuItem>
-                    ))}
+                    )) ?? []}
                   </Select>
                   {selectedTemplate && (
                     <FormHelperText>

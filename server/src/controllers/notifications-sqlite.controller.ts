@@ -86,7 +86,12 @@ export const createNotification = async (req: Request, res: Response) => {
     // Check if user exists
     const userExists = db.prepare('SELECT id FROM users WHERE id = ?').get(user_id);
     if (!userExists) {
-      return res.status(400).json({ message: 'User not found' });
+      console.log('User not found:', user_id);
+      return res.status(400).json({ 
+        message: 'User not found',
+        invalid_field: 'user_id',
+        received_value: user_id
+      });
     }
     
     let finalMessage = message;
@@ -466,8 +471,10 @@ export const createNotificationFromTemplate = async (req: Request, res: Response
     
     // Validate required fields
     if (!user_id || !template_id) {
+      console.log('Invalid request:', { user_id, template_id });
       return res.status(400).json({ 
-        message: 'User ID and template ID are required' 
+        message: 'User ID and template ID are required',
+        missing_fields: [!user_id && 'user_id', !template_id && 'template_id'].filter(Boolean)
       });
     }
     
@@ -476,13 +483,23 @@ export const createNotificationFromTemplate = async (req: Request, res: Response
     // Check if user exists
     const userExists = db.prepare('SELECT id FROM users WHERE id = ?').get(user_id);
     if (!userExists) {
-      return res.status(400).json({ message: 'User not found' });
+      console.log('User not found:', user_id);
+      return res.status(400).json({ 
+        message: 'User not found',
+        invalid_field: 'user_id',
+        received_value: user_id
+      });
     }
     
     // Get template
     const template = db.prepare('SELECT * FROM notification_templates WHERE id = ?').get(template_id) as Template;
     if (!template) {
-      return res.status(400).json({ message: 'Template not found' });
+      console.log('Template not found:', template_id);
+      return res.status(400).json({ 
+        message: 'Template not found',
+        invalid_field: 'template_id',
+        received_value: template_id
+      });
     }
     
     let finalMessage = template.content;

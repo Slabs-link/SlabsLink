@@ -7,6 +7,7 @@ import { DatabaseManager } from './config/database-sqlite';
 import { initializeComuniTable } from './controllers/comuni-sqlite.controller';
 import { initializeDatabase } from './config/init-database';
 import { getDatabase } from './config/database-sqlite';
+import axios, { AxiosError } from 'axios';
 
 // Create a fresh Express app
 const app = express();
@@ -160,12 +161,71 @@ app.get('/api/logs/status', (req, res) => {
 // NOTIFICATIONS ENDPOINTS - Super flexible implementation
 // GET /api/notifications
 app.get('/api/notifications', (req, res) => {
-  logToFile('GET /api/notifications received');
-  res.json({
-    notifications: [],
-    pagination: { page: 1, limit: 10, total: 0, pages: 0 },
-    stats: { pending_count: 0, sent_count: 0, failed_count: 0, total_count: 0 }
-  });
+  try {
+    logToFile('GET /api/notifications received');
+    const db = getDatabase();
+    
+    // Estrazione e validazione parametri
+    const statusFilter = typeof req.query.status === 'string' ? req.query.status : undefined;
+    const searchQuery = typeof req.query.search === 'string' ? req.query.search.trim() : undefined;
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit as string) || 10));
+    const offset = (page - 1) * limit;
+
+    // Costruzione query dinamica
+    let whereClauses: string[] = [];
+    let params: (string | number)[] = [];
+
+    if (statusFilter) {
+      whereClauses.push('LOWER(status) = ?');
+      params.push(statusFilter.toLowerCase());
+    }
+
+    if (searchQuery) {
+      whereClauses.push('(LOWER(message) LIKE LOWER(?) OR LOWER(patient_id) LIKE LOWER(?))');
+      params.push(`%${searchQuery}%`, `%${searchQuery}%`);
+    }
+
+    const where = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+    
+    // Conteggi affidabili
+    interface CountResult {
+  count: number;
+}
+
+const totalCount = (db.prepare(`SELECT COUNT(*) as count FROM notifications ${where}`).get(params) as CountResult)?.count || 0;
+    const pendingCount = (db.prepare(`SELECT COUNT(*) as count FROM notifications WHERE LOWER(status) = 'pending' ${searchQuery ? 'AND (LOWER(message) LIKE LOWER(?) OR LOWER(patient_id) LIKE LOWER(?))' : ''}`).get(searchQuery ? [`%${searchQuery}%`, `%${searchQuery}%`] : []) as CountResult)?.count || 0;
+    const sentCount = (db.prepare(`SELECT COUNT(*) as count FROM notifications WHERE LOWER(status) = 'sent' ${searchQuery ? 'AND (LOWER(message) LIKE LOWER(?) OR LOWER(patient_id) LIKE LOWER(?))' : ''}`).get(searchQuery ? [`%${searchQuery}%`, `%${searchQuery}%`] : []) as CountResult)?.count || 0;
+    const failedCount = (db.prepare(`SELECT COUNT(*) as count FROM notifications WHERE LOWER(status) = 'failed' ${searchQuery ? 'AND (LOWER(message) LIKE LOWER(?) OR LOWER(patient_id) LIKE LOWER(?))' : ''}`).get(searchQuery ? [`%${searchQuery}%`, `%${searchQuery}%`] : []) as CountResult)?.count || 0;
+
+    // Recupero dati con paginazione
+    const notifications = db.prepare(
+      `SELECT * FROM notifications ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
+    ).all([...params, limit, offset]);
+
+    res.json({
+      notifications,
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        pages: Math.ceil(totalCount / limit)
+      },
+      stats: {
+        pending_count: pendingCount,
+        sent_count: sentCount,
+        failed_count: failedCount,
+        total_count: totalCount
+      }
+    });
+
+  } catch (error) {
+    logToFile(`Errore GET /api/notifications: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    res.status(500).json({
+      error: 'Errore nel recupero delle notifiche',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
 });
 
 // POST /api/notifications - Accept any format
@@ -237,10 +297,45 @@ app.use((req, res) => {
 });
 
 // Error handling middleware
-app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
-  logToFile(`Error: ${err.message}`);
-  if (err.stack) logToFile(err.stack);
-  res.status(500).json({ message: 'Internal server error', error: err.message });
+app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
+  // Type guard per AxiosError
+if (typeof err === 'object' && err !== null && 'isAxiosError' in err && 'response' in err) {
+  const axiosError = err as AxiosError;
+  if (axiosError.response) {
+    logToFile(`Errore Axios - Status: ${axiosError.response.status}`);
+    logToFile(`Dettagli: ${JSON.stringify(axiosError.response?.data)}`);
+    logToFile(`Headers: ${JSON.stringify(axiosError.response?.headers)}`);
+  }
+  logToFile(`Richiesta: ${JSON.stringify(axiosError.request)}`);
+} 
+// Type guard per Error
+else if (err instanceof Error) {
+  logToFile(`Errore generico: ${err.message}`);
+  logToFile(`Stack trace: ${err.stack || 'Nessuno stack trace disponibile'}`);
+} 
+// Controllo strutturale migliorato
+else if (typeof err === 'object' && err !== null) {
+  const errorDetails = {
+    ...('message' in err && { message: String((err as Record<string, unknown>).message) }),
+    ...('code' in err && { code: String((err as Record<string, unknown>).code) }),
+    ...('stack' in err && { stack: String((err as Record<string, unknown>).stack) })
+  };
+  logToFile('Errore strutturato: ' + JSON.stringify(errorDetails));
+} 
+else {
+  logToFile('Errore sconosciuto: ' + JSON.stringify(err));
+}
+
+const errorMessage = (err && 
+  (typeof err === 'object' && 
+    ('message' in err && typeof err.message === 'string')))
+  ? err.message
+  : 'Errore sconosciuto';
+  
+  res.status(500).json({
+    message: 'Internal server error',
+    error: typeof errorMessage === 'string' ? errorMessage : 'Errore sconosciuto'
+  });
 });
 
 // Start server
