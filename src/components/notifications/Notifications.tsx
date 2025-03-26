@@ -125,7 +125,12 @@ const Notifications: React.FC = () => {
     type: '',
     patientId: ''
   });
-  const [pagination, setPagination] = useState<PaginationState>({ page: 1, pageSize: 10, pages: 1, total: 0 });
+  const [pagination, setPagination] = useState<PaginationState>({ 
+    page: 1, 
+    pageSize: 10, 
+    pages: 1, 
+    total: 0 
+  });
   const [patients, setPatients] = useState<{id: number, first_name: string, last_name: string}[]>([]);
   const [newNotification, setNewNotification] = useState({
     patient_id: '',
