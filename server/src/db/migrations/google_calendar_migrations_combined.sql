@@ -48,14 +48,14 @@ CREATE TABLE IF NOT EXISTS appointments_temp (
 );
 
 INSERT OR REPLACE INTO appointments_temp
-SELECT DISTINCT a.id, a.date, a.time, a.patient_name, a.notes,
+SELECT DISTINCT a.id, a.date, a.time, a.patient, a.notes,
   NULL AS calendar_id, 
   NULL AS last_sync_time, 
   NULL AS sync_error
 FROM appointments a
 JOIN users u ON 
-  a.patient_name = u.first_name || ' ' || u.last_name
-  AND u.id = (SELECT id FROM users WHERE first_name || ' ' || last_name = a.patient_name LIMIT 1);
+  a.patient = u.first_name || ' ' || u.last_name
+  AND u.id = (SELECT id FROM users WHERE first_name || ' ' || last_name = a.patient LIMIT 1);
 
 DROP TABLE appointments;
 

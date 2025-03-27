@@ -1,7 +1,16 @@
 import express from 'express';
-import { getDatabase } from '../config/database-sqlite';
+
 import { Request, Response } from 'express';
 import { calendar_v3 } from 'googleapis';
+import { Router } from 'express';
+import { getDatabase } from '../../db/migrations/migration';
+import type { calendar_v3 } from 'googleapis';
+import { GoogleCalendarService } from '../services/google-calendar.service';
+
+import { Appointment } from '../interfaces/appointment.interface';
+
+export const googleCalendarRoutes = Router();
+const googleCalendarService = new GoogleCalendarService();
 
 // Interfaccia per le impostazioni del calendario
 interface CalendarSettings {
@@ -777,3 +786,34 @@ router.post('/sync', async (req: Request, res: Response) => {
 });
 
 export default router;
+
+googleCalendarRoutes.post('/api/google/webhook', async (req, res) => {
+  try {
+    const channelId = req.headers['x-goog-channel-id'];
+    const resourceId = req.headers['x-goog-resource-id'];
+    const resourceState = req.headers['x-goog-resource-state'];
+
+    if (resourceState === 'sync') {
+      return res.status(200).send('Sync completed');
+    }
+
+    const event = req.body;
+    await googleCalendarService.handleGoogleUpdate(event.id);
+    
+    res.status(200).send('Event processed');
+  } catch (error) {
+    console.error('Webhook error:', error);
+    res.status(500).send('Internal server error');
+  }
+});
+
+googleCalendarRoutes.post('/api/google/webhook/setup', async (req, res) => {
+  try {
+    const webhookUrl = req.body.webhookUrl;
+    await googleCalendarService.setupWebhook(webhookUrl);
+    res.status(200).json({ message: 'Webhook configurato correttamente' });
+  } catch (error) {
+    console.error('Webhook setup error:', error);
+    res.status(500).json({ error: 'Errore nella configurazione del webhook' });
+  }
+});

@@ -98,6 +98,8 @@ interface Appointment {
   google_calendar_event_id?: string | null;
   appointment_type_id?: number | null;
   appointment_type_name?: string;
+  start_time: string;
+  end_time: string;
 }
 
 // Sync all appointments with Google Calendar
@@ -196,7 +198,20 @@ export const getAllAppointments = async (req: Request, res: Response) => {
       ORDER BY a.date DESC
     `).all();
     
-    return res.json(appointments);
+    // Formatta le date prima di inviarle al frontend
+    const formattedAppointments = appointments.map((appointment: any) => {
+      // Assicurati che i campi appointment_date e appointment_time siano presenti
+      // e che siano in un formato semplice senza timezone
+      if (appointment && 'date' in appointment && appointment.date) {
+        appointment.appointment_date = appointment.date.split('T')[0]; // Estrai solo la parte della data YYYY-MM-DD
+      }
+      if (appointment && 'time' in appointment && appointment.time) {
+        appointment.appointment_time = appointment.time.split('T')[1]?.substring(0, 5) || appointment.time; // Estrai HH:MM
+      }
+      return appointment;
+    });
+    
+    return res.json(formattedAppointments);
   } catch (error: any) {
     console.error('Error getting appointments:', error);
     return res.status(500).json({ 
@@ -221,10 +236,18 @@ export const getAppointmentById = async (req: Request, res: Response) => {
       JOIN users u ON a.patient_id = u.id
       LEFT JOIN appointment_types t ON a.appointment_type_id = t.id
       WHERE a.id = ?
-    `).get(id);
+    `).get(id) as Appointment | undefined;
     
     if (!appointment) {
       return res.status(404).json({ message: 'Appointment not found' });
+    }
+    
+    // Formatta le date prima di inviarle al frontend
+    if (appointment && typeof appointment === 'object' && 'date' in appointment && appointment.date) {
+      (appointment as any).appointment_date = appointment.date.split('T')[0]; // Estrai solo la parte della data YYYY-MM-DD
+    }
+    if (appointment && typeof appointment === 'object' && 'time' in appointment && appointment.time) {
+      (appointment as any).appointment_time = appointment.time.split('T')[1]?.substring(0, 5) || appointment.time; // Estrai HH:MM
     }
     
     return res.json(appointment);
@@ -255,7 +278,7 @@ export const createAppointment = async (req: Request, res: Response) => {
     } = req.body;
     
     // Validate required fields
-    if (!patient_id || !date || !time || !duration) {
+    if (!patient_id || !(date) || !(time) || !duration) {
       return res.status(400).json({ 
         message: 'Patient ID, appointment date, time and duration are required' 
       });
@@ -399,7 +422,18 @@ export const getAppointmentsByPatientId = async (req: Request, res: Response) =>
       ORDER BY a.date, a.time
     `).all(patientId);
     
-    return res.json({ appointments });
+    // Formatta le date prima di inviarle al frontend
+    const formattedAppointments = appointments.map((appointment: any) => {
+      if (appointment && appointment.date) {
+        appointment.appointment_date = appointment.date.split('T')[0];
+      }
+      if (appointment && appointment.time) {
+        appointment.appointment_time = appointment.time.split('T')[1]?.substring(0, 5) || appointment.time;
+      }
+      return appointment;
+    });
+    
+    return res.json({ appointments: formattedAppointments });
   } catch (error: any) {
     console.error('Error getting patient appointments:', error);
     return res.status(500).json({ 
@@ -425,7 +459,20 @@ export const getAppointmentsByDateRange = async (req: Request, res: Response) =>
       ORDER BY a.date, a.time
     `).all(startDate, endDate);
     
-    return res.json(appointments);
+    // Formatta le date prima di inviarle al frontend
+    const formattedAppointments = appointments.map((appointment: any) => {
+      // Assicurati che i campi appointment_date e appointment_time siano presenti
+      // e che siano in un formato semplice senza timezone
+      if (appointment && 'date' in appointment && appointment.date) {
+        appointment.appointment_date = appointment.date.split('T')[0]; // Estrai solo la parte della data YYYY-MM-DD
+      }
+      if (appointment && 'time' in appointment && appointment.time) {
+        appointment.appointment_time = appointment.time.split('T')[1]?.substring(0, 5) || appointment.time; // Estrai HH:MM
+      }
+      return appointment;
+    });
+    
+    return res.json(formattedAppointments);
   } catch (error: any) {
     console.error('Error getting appointments by date range:', error);
     return res.status(500).json({ 
@@ -452,7 +499,20 @@ export const getTodayAppointments = async (req: Request, res: Response) => {
       ORDER BY a.time
     `).all(formattedDate);
     
-    return res.json({ appointments: appointments || [] });
+    // Formatta le date prima di inviarle al frontend
+    const formattedAppointments = (appointments || []).map((appointment: any) => {
+      // Assicurati che i campi appointment_date e appointment_time siano presenti
+      // e che siano in un formato semplice senza timezone
+      if (appointment.date) {
+        appointment.appointment_date = appointment.date.split('T')[0]; // Estrai solo la parte della data YYYY-MM-DD
+      }
+      if (appointment.time) {
+        appointment.appointment_time = appointment.time.split('T')[1]?.substring(0, 5) || appointment.time; // Estrai HH:MM
+      }
+      return appointment;
+    });
+    
+    return res.json({ appointments: formattedAppointments });
   } catch (error: any) {
     console.error('Error getting today\'s appointments:', error);
     return res.status(500).json({ 
@@ -480,7 +540,20 @@ export const getUpcomingAppointments = async (req: Request, res: Response) => {
       LIMIT 10
     `).all(formattedDate);
     
-    return res.json(appointments);
+    // Formatta le date prima di inviarle al frontend
+    const formattedAppointments = appointments.map((appointment: any) => {
+      // Assicurati che i campi appointment_date e appointment_time siano presenti
+      // e che siano in un formato semplice senza timezone
+      if (appointment && 'date' in appointment && appointment.date) {
+        appointment.appointment_date = appointment.date.split('T')[0]; // Estrai solo la parte della data YYYY-MM-DD
+      }
+      if (appointment && 'time' in appointment && appointment.time) {
+        appointment.appointment_time = appointment.time.split('T')[1]?.substring(0, 5) || appointment.time; // Estrai HH:MM
+      }
+      return appointment;
+    });
+    
+    return res.json(formattedAppointments);
   } catch (error: any) {
     console.error('Error getting upcoming appointments:', error);
     return res.status(500).json({ 
@@ -547,14 +620,20 @@ export const updateAppointment = async (req: Request, res: Response) => {
       patient_id, 
       date, 
       time, 
+      appointment_date,
+      appointment_time,
       duration, 
       notes, 
       status,
       send_notification = false
     } = req.body;
     
+    // Usa appointment_date e appointment_time se forniti, altrimenti usa date e time
+    const finalDate = appointment_date || date;
+    const finalTime = appointment_time || time;
+    
     // Validate required fields
-    if (!patient_id || !date || !time || !duration) {
+    if (!patient_id || !(date) || !(time) || !duration) {
       return res.status(400).json({ 
         message: 'Patient ID, appointment date, time and duration are required' 
       });
@@ -618,8 +697,8 @@ export const updateAppointment = async (req: Request, res: Response) => {
       updateStmt.run(
         finalTitle,
         patient_id,
-        date,
-        time,
+        finalDate,
+        finalTime,
         duration,
         notes || null,
         status,

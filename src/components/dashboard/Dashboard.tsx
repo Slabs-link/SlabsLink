@@ -126,15 +126,33 @@ const Dashboard: React.FC = () => {
       // Organize appointments by date
       const appointmentsByDay: AppointmentsByDate = {};
       response.data.forEach((appointment: DashboardAppointment) => {
-        // Fix timezone issue by creating a new date object from the date string
-        // This ensures the date is interpreted correctly without timezone offset
-        const appointmentDate = new Date(appointment.appointment_date);
-        const dateKey = format(appointmentDate, 'yyyy-MM-dd');
-        
-        if (!appointmentsByDay[dateKey]) {
-          appointmentsByDay[dateKey] = [];
+        try {
+          // Verifica che appointment_date sia un valore valido
+          if (!appointment.appointment_date) {
+            console.warn('Appuntamento senza data valida:', appointment);
+            return; // Salta questo appuntamento
+          }
+          
+          // Fix timezone issue by creating a new date object from the date string
+          // This ensures the date is interpreted correctly without timezone offset
+          const appointmentDate = new Date(appointment.appointment_date);
+          
+          // Verifica che la data sia valida
+          if (isNaN(appointmentDate.getTime())) {
+            console.warn('Data non valida per appuntamento:', appointment);
+            return; // Salta questo appuntamento
+          }
+          
+          const dateKey = format(appointmentDate, 'yyyy-MM-dd');
+          
+          if (!appointmentsByDay[dateKey]) {
+            appointmentsByDay[dateKey] = [];
+          }
+          appointmentsByDay[dateKey].push(appointment);
+        } catch (err) {
+          console.error('Errore durante l\'elaborazione dell\'appuntamento:', appointment, err);
+          // Continua con il prossimo appuntamento
         }
-        appointmentsByDay[dateKey].push(appointment);
       });
       
       setAppointmentsByDate(appointmentsByDay);

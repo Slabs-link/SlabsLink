@@ -5,7 +5,7 @@ const path = require('path');
 const dbPath = path.join(__dirname, 'slabs.db');
 const db = new sqlite3.Database(dbPath);
 
-const sql = fs.readFileSync(path.join(__dirname, '../src/db/migrations/google_calendar_migrations_combined.sql'), 'utf8');
+const sql = fs.readFileSync(path.join(__dirname, '../src/db/migrations/20240618123000_add_google_sync_fields.sql'), 'utf8');
 
 db.exec(sql, (err) => {
   if (err) {

@@ -2,8 +2,8 @@ export interface Appointment {
   id: number;
   patient_id?: number;
   patient_name: string;
-  date: string;
-  time: string;
+  start_time: string;
+  end_time: string;
   notes?: string;
   google_calendar_event_id?: string | null;
   synced?: number | boolean;

@@ -285,10 +285,12 @@ app.post('/api/notifications', (req, res) => {
 // Import routes
 import licenseRoutes from './routes/license.routes';
 import settingsRoutes from './routes/settings.routes';
+import { googleCalendarRoutes } from './routes/google-calendar.routes';
 
 // Register routes
 app.use('/api/license', licenseRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/google', googleCalendarRoutes);
 
 // Not found middleware
 app.use((req, res) => {
