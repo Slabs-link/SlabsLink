@@ -76,6 +76,33 @@ const AppointmentForm: React.FC<AppointmentFormProps> = ({ appointment, onSave, 
       try {
         const response = await axios.get('http://localhost:3001/api/users');
         setUsers(response.data);
+        
+        // Se stiamo modificando un appuntamento esistente, popola il form dopo aver caricato gli utenti
+        if (appointment) {
+          // Assicurati che patient_id sia un numero
+          const patientId = typeof appointment.patient_id === 'string' 
+            ? parseInt(appointment.patient_id, 10) 
+            : appointment.patient_id;
+            
+          setFormData({
+            id: appointment.id,
+            title: appointment.title,
+            appointment_type_id: appointment.appointment_type_id || null,
+            patient_id: patientId,
+            date: (appointment.appointment_date || appointment.date) ? new Date(appointment.appointment_date || appointment.date) : null,
+            time: (appointment.appointment_time || appointment.time) ? new Date(`2000-01-01T${appointment.appointment_time || appointment.time}`) : null,
+            duration: appointment.duration,
+            notes: appointment.notes || '',
+            status: appointment.status
+          });
+          
+          console.log('Appointment data loaded:', {
+            id: appointment.id,
+            patient_id: patientId,
+            first_name: appointment.first_name,
+            last_name: appointment.last_name
+          });
+        }
       } catch (error) {
         console.error('Error fetching users:', error);
       } finally {
@@ -104,21 +131,6 @@ const AppointmentForm: React.FC<AppointmentFormProps> = ({ appointment, onSave, 
   
     fetchUsers();
     fetchAppointmentTypes();
-
-    // Se stiamo modificando un appuntamento esistente, popola il form
-    if (appointment) {
-      setFormData({
-        id: appointment.id,
-        title: appointment.title,
-        appointment_type_id: appointment.appointment_type_id || null,
-        patient_id: appointment.patient_id,
-        date: (appointment.appointment_date || appointment.date) ? new Date(appointment.appointment_date || appointment.date) : null,
-        time: (appointment.appointment_time || appointment.time) ? new Date(`2000-01-01T${appointment.appointment_time || appointment.time}`) : null,
-        duration: appointment.duration,
-        notes: appointment.notes || '',
-        status: appointment.status
-      });
-    }
   }, [appointment]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {

@@ -89,7 +89,6 @@ interface Appointment {
   notes?: string;
   status: string;
   created_at?: string;
-  updated_at?: string;
   user_id?: number;
   first_name?: string;
   last_name?: string;
@@ -278,7 +277,7 @@ export const createAppointment = async (req: Request, res: Response) => {
     } = req.body;
     
     // Validate required fields
-    if (!patient_id || !(date) || !(time) || !duration) {
+    if (!patient_id || !date || !time || !duration) {
       return res.status(400).json({ 
         message: 'Patient ID, appointment date, time and duration are required' 
       });
@@ -503,16 +502,16 @@ export const getTodayAppointments = async (req: Request, res: Response) => {
     const formattedAppointments = (appointments || []).map((appointment: any) => {
       // Assicurati che i campi appointment_date e appointment_time siano presenti
       // e che siano in un formato semplice senza timezone
-      if (appointment.date) {
-        appointment.appointment_date = appointment.date.split('T')[0]; // Estrai solo la parte della data YYYY-MM-DD
+      if (appointment.appointment_date) {
+        appointment.appointment_date = appointment.appointment_date.split('T')[0]; // Estrai solo la parte della data YYYY-MM-DD
       }
-      if (appointment.time) {
-        appointment.appointment_time = appointment.time.split('T')[1]?.substring(0, 5) || appointment.time; // Estrai HH:MM
+      if (appointment.appointment_time) {
+        appointment.appointment_time = appointment.appointment_time.split('T')[1]?.substring(0, 5) || appointment.appointment_time; // Estrai HH:MM
       }
       return appointment;
     });
     
-    return res.json({ appointments: formattedAppointments });
+    return res.json(formattedAppointments);
   } catch (error: any) {
     console.error('Error getting today\'s appointments:', error);
     return res.status(500).json({ 
@@ -544,11 +543,11 @@ export const getUpcomingAppointments = async (req: Request, res: Response) => {
     const formattedAppointments = appointments.map((appointment: any) => {
       // Assicurati che i campi appointment_date e appointment_time siano presenti
       // e che siano in un formato semplice senza timezone
-      if (appointment && 'date' in appointment && appointment.date) {
-        appointment.appointment_date = appointment.date.split('T')[0]; // Estrai solo la parte della data YYYY-MM-DD
+      if (appointment && 'appointment_date' in appointment && appointment.appointment_date) {
+        appointment.appointment_date = appointment.appointment_date.split('T')[0]; // Estrai solo la parte della data YYYY-MM-DD
       }
-      if (appointment && 'time' in appointment && appointment.time) {
-        appointment.appointment_time = appointment.time.split('T')[1]?.substring(0, 5) || appointment.time; // Estrai HH:MM
+      if (appointment && 'appointment_time' in appointment && appointment.appointment_time) {
+        appointment.appointment_time = appointment.appointment_time.split('T')[1]?.substring(0, 5) || appointment.appointment_time; // Estrai HH:MM
       }
       return appointment;
     });
@@ -633,7 +632,7 @@ export const updateAppointment = async (req: Request, res: Response) => {
     const finalTime = appointment_time || time;
     
     // Validate required fields
-    if (!patient_id || !(date) || !(time) || !duration) {
+    if (!patient_id || !finalDate || !finalTime || !duration) {
       return res.status(400).json({ 
         message: 'Patient ID, appointment date, time and duration are required' 
       });
@@ -680,8 +679,7 @@ export const updateAppointment = async (req: Request, res: Response) => {
           duration = ?,
           notes = ?,
           status = ?,
-          appointment_type_id = ?,
-          updated_at = datetime('now')
+          appointment_type_id = ?
         WHERE id = ?
       `);
       
@@ -706,6 +704,18 @@ export const updateAppointment = async (req: Request, res: Response) => {
         id
       );
       
+      // Log per debug
+      console.log('Appointment updated with data:', {
+        id,
+        title: finalTitle,
+        patient_id,
+        date: finalDate,
+        time: finalTime,
+        duration,
+        status,
+        appointment_type_id
+      });
+      
       // If notification requested, create notification
       if (send_notification) {
         // Get notification template
@@ -726,8 +736,8 @@ export const updateAppointment = async (req: Request, res: Response) => {
           let message = template.content
             .replace('{first_name}', patient.first_name)
             .replace('{last_name}', patient.last_name)
-            .replace('{date}', date)
-            .replace('{time}', time);
+            .replace('{date}', finalDate)
+            .replace('{time}', finalTime);
           
           // Insert notification
           db.prepare(`

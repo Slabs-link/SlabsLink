@@ -108,8 +108,28 @@ const Appointments: React.FC = () => {
   }, []);
 
   const handleOpenFormDialog = (appointment: Appointment | null = null) => {
-    setSelectedAppointment(appointment);
-    setOpenFormDialog(true);
+    // Se stiamo modificando un appuntamento esistente, ottieni i dettagli completi
+    if (appointment) {
+      axios.get(`http://localhost:3001/api/appointments/${appointment.id}`)
+        .then(response => {
+          setSelectedAppointment(response.data);
+          setOpenFormDialog(true);
+        })
+        .catch(error => {
+          console.error('Error fetching appointment details:', error);
+          setNotification({
+            open: true,
+            message: 'Errore nel caricamento dei dettagli dell\'appuntamento',
+            severity: 'error'
+          });
+          // In caso di errore, usa comunque i dati disponibili
+          setSelectedAppointment(appointment);
+          setOpenFormDialog(true);
+        });
+    } else {
+      setSelectedAppointment(null);
+      setOpenFormDialog(true);
+    }
   };
 
   const handleCloseFormDialog = () => {
