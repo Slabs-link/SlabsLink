@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, Container, Grid, Paper, Avatar, Button, Card, CardContent, Badge, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Divider, TextField } from '@mui/material';
+import { Box, Typography, Container, Grid, Paper, Avatar, Button, Card, CardContent, Badge, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Divider, TextField, Tabs, Tab, TableContainer, Table, TableHead, TableRow, TableCell, TableBody, FormControl, InputLabel, Select, MenuItem } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import PersonIcon from '@mui/icons-material/Person';
@@ -21,6 +21,8 @@ import EmailIcon from '@mui/icons-material/Email';
 import PhoneIcon from '@mui/icons-material/Phone';
 import CakeIcon from '@mui/icons-material/Cake';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import NoteIcon from '@mui/icons-material/Note';
 
 // Styled components
 const SidebarContainer = styled(Box)(({ theme }) => ({
@@ -88,6 +90,8 @@ const Dashboard: React.FC = () => {
     last_name?: string;
     appointment_date: string;
     appointment_time?: string;
+    status?: string;
+    notes?: string;
   }
 
   interface Patient {
@@ -108,6 +112,34 @@ const Dashboard: React.FC = () => {
     [key: string]: DashboardAppointment[];
   }
 
+  // Interface for TabPanel props
+  interface TabPanelProps {
+    children?: React.ReactNode;
+    index: number;
+    value: number;
+  }
+
+  // TabPanel component for the user details dialog
+  function TabPanel(props: TabPanelProps) {
+    const { children, value, index, ...other } = props;
+
+    return (
+      <div
+        role="tabpanel"
+        hidden={value !== index}
+        id={`user-tabpanel-${index}`}
+        aria-labelledby={`user-tab-${index}`}
+        {...other}
+      >
+        {value === index && (
+          <Box sx={{ p: 3 }}>
+            {children}
+          </Box>
+        )}
+      </div>
+    );
+  }
+
   const [todayAppointments, setTodayAppointments] = useState<DashboardAppointment[]>([]);
   const [recentPatients, setRecentPatients] = useState<Patient[]>([]);
   const [upcomingAppointments, setUpcomingAppointments] = useState<DashboardAppointment[]>([]);
@@ -115,6 +147,11 @@ const Dashboard: React.FC = () => {
   const [appointmentsByDate, setAppointmentsByDate] = useState<AppointmentsByDate>({});
   const [openUserDialog, setOpenUserDialog] = useState(false);
   const [selectedUser, setSelectedUser] = useState<Patient | null>(null);
+  const [tabValue, setTabValue] = useState(0);
+  const [userAppointments, setUserAppointments] = useState<DashboardAppointment[]>([]);
+  const [appointmentFilterStatus, setAppointmentFilterStatus] = useState('all');
+  const [openAppointmentDialog, setOpenAppointmentDialog] = useState(false);
+  const [selectedAppointment, setSelectedAppointment] = useState<DashboardAppointment | null>(null);
 
   const fetchMonthAppointments = async (date: Date) => {
     try {
@@ -179,6 +216,33 @@ const Dashboard: React.FC = () => {
       const response = await axios.get(`http://localhost:3001/api/users/${userId}`);
       setSelectedUser(response.data);
       setOpenUserDialog(true);
+      setTabValue(0); // Reset to first tab
+      
+      // Fetch user appointments from the API
+      try {
+        // Fetch appointments for this user from the API
+        const appointmentsResponse = await axios.get(`http://localhost:3001/api/appointments/patient/${userId}`);
+        
+        if (appointmentsResponse.data && appointmentsResponse.data.appointments && Array.isArray(appointmentsResponse.data.appointments)) {
+          // Map the API response to the expected format
+          const formattedAppointments = appointmentsResponse.data.appointments.map((appointment: any) => ({
+            id: appointment.id,
+            date: appointment.appointment_date || appointment.date,
+            time: appointment.appointment_time || appointment.time,
+            notes: appointment.notes || '',
+            title: appointment.title || '',
+            status: appointment.status || 'scheduled'
+          }));
+          setUserAppointments(formattedAppointments);
+        } else {
+          // If no appointments or invalid response, show empty list
+          setUserAppointments([]);
+        }
+      } catch (appointmentError) {
+        console.error('Error fetching user appointments:', appointmentError);
+        // If error, show empty list
+        setUserAppointments([]);
+      }
     } catch (error) {
       console.error('Error fetching user details:', error);
       // Fallback: use the user data we already have
@@ -186,6 +250,8 @@ const Dashboard: React.FC = () => {
       if (user) {
         setSelectedUser(user);
         setOpenUserDialog(true);
+        setTabValue(0); // Reset to first tab
+        setUserAppointments([]); // Empty appointments list
       }
     }
   };
@@ -193,6 +259,25 @@ const Dashboard: React.FC = () => {
   const handleCloseUserDialog = () => {
     setOpenUserDialog(false);
     setSelectedUser(null);
+    setUserAppointments([]);
+  };
+  
+  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+    setTabValue(newValue);
+  };
+  
+  const handleViewAppointmentDetails = (appointment: DashboardAppointment) => {
+    setSelectedAppointment(appointment);
+    setOpenAppointmentDialog(true);
+  };
+  
+  const handleCloseAppointmentDialog = () => {
+    setOpenAppointmentDialog(false);
+    setSelectedAppointment(null);
+  };
+  
+  const handleAppointmentFilterChange = (event: any) => {
+    setAppointmentFilterStatus(event.target.value);
   };
 
   const handlePrevMonth = () => {
@@ -253,7 +338,7 @@ const Dashboard: React.FC = () => {
         <LicenseAlert />
         
         {/* User Details Dialog */}
-        <Dialog open={openUserDialog} onClose={handleCloseUserDialog} maxWidth="md" fullWidth>
+        <Dialog open={openUserDialog} onClose={handleCloseUserDialog} maxWidth="lg" fullWidth>
           <DialogTitle>
             <Typography variant="h6" fontWeight="bold">Dettagli Utente</Typography>
           </DialogTitle>
@@ -277,72 +362,233 @@ const Dashboard: React.FC = () => {
                 <Divider sx={{ my: 2 }} />
               </Grid>
               
-              <Grid item xs={12} md={6}>
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-                    Informazioni di Contatto
-                  </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                    <EmailIcon sx={{ mr: 1, color: 'primary.main' }} />
-                    <Typography variant="body1">{selectedUser.email}</Typography>
-                  </Box>
-                  {selectedUser.phone && (
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                      <PhoneIcon sx={{ mr: 1, color: 'primary.main' }} />
-                      <Typography variant="body1">{selectedUser.phone}</Typography>
-                    </Box>
-                  )}
-                </Box>
-              </Grid>
-              
-              <Grid item xs={12} md={6}>
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-                    Informazioni Personali
-                  </Typography>
-                  {selectedUser.birth_date && (
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                      <CakeIcon sx={{ mr: 1, color: 'primary.main' }} />
-                      <Typography variant="body1">
-                        Data di nascita: {new Date(selectedUser.birth_date).toLocaleDateString('it-IT')}
-                      </Typography>
-                    </Box>
-                  )}
-                  {selectedUser.gender && (
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                      <PersonIcon sx={{ mr: 1, color: 'primary.main' }} />
-                      <Typography variant="body1">Genere: {selectedUser.gender}</Typography>
-                    </Box>
-                  )}
-                  {selectedUser.fiscal_code && (
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                      <Badge sx={{ mr: 1, color: 'primary.main' }} />
-                      <Typography variant="body1">Codice Fiscale: {selectedUser.fiscal_code}</Typography>
-                    </Box>
-                  )}
-                </Box>
-              </Grid>
-              
+              {/* Tabs for different sections */}
               <Grid item xs={12}>
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-                    Indirizzo
-                  </Typography>
-                  {(selectedUser.address || selectedUser.city) && (
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                      <LocationOnIcon sx={{ mr: 1, color: 'primary.main' }} />
-                      <Typography variant="body1">
-                        {selectedUser.address}{selectedUser.address && selectedUser.city ? ', ' : ''}{selectedUser.city}
-                      </Typography>
-                    </Box>
-                  )}
+                <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+                  <Tabs value={tabValue} onChange={handleTabChange} aria-label="user details tabs">
+                    <Tab label="INFORMAZIONI MEDICHE" id="user-tab-0" aria-controls="user-tabpanel-0" />
+                    <Tab label="APPUNTAMENTI" id="user-tab-1" aria-controls="user-tabpanel-1" />
+                  </Tabs>
                 </Box>
+                
+                {/* Informazioni Mediche Tab */}
+                <TabPanel value={tabValue} index={0}>
+                  <Grid container spacing={3}>
+                    <Grid item xs={12} md={6}>
+                      <Box sx={{ mb: 2 }}>
+                        <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+                          Informazioni di Contatto
+                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                          <EmailIcon sx={{ mr: 1, color: 'primary.main' }} />
+                          <Typography variant="body1">{selectedUser.email}</Typography>
+                        </Box>
+                        {selectedUser.phone && (
+                          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                            <PhoneIcon sx={{ mr: 1, color: 'primary.main' }} />
+                            <Typography variant="body1">{selectedUser.phone}</Typography>
+                          </Box>
+                        )}
+                      </Box>
+                    </Grid>
+                    
+                    <Grid item xs={12} md={6}>
+                      <Box sx={{ mb: 2 }}>
+                        <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+                          Informazioni Personali
+                        </Typography>
+                        {selectedUser.birth_date && (
+                          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                            <CakeIcon sx={{ mr: 1, color: 'primary.main' }} />
+                            <Typography variant="body1">
+                              Data di nascita: {new Date(selectedUser.birth_date).toLocaleDateString('it-IT')}
+                            </Typography>
+                          </Box>
+                        )}
+                        {selectedUser.gender && (
+                          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                            <PersonIcon sx={{ mr: 1, color: 'primary.main' }} />
+                            <Typography variant="body1">Genere: {selectedUser.gender}</Typography>
+                          </Box>
+                        )}
+                        {selectedUser.fiscal_code && (
+                          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                            <Badge sx={{ mr: 1, color: 'primary.main' }} />
+                            <Typography variant="body1">Codice Fiscale: {selectedUser.fiscal_code}</Typography>
+                          </Box>
+                        )}
+                      </Box>
+                    </Grid>
+                    
+                    <Grid item xs={12}>
+                      <Box sx={{ mb: 2 }}>
+                        <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+                          Indirizzo
+                        </Typography>
+                        {(selectedUser.address || selectedUser.city) && (
+                          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                            <LocationOnIcon sx={{ mr: 1, color: 'primary.main' }} />
+                            <Typography variant="body1">
+                              {selectedUser.address}{selectedUser.address && selectedUser.city ? ', ' : ''}{selectedUser.city}
+                            </Typography>
+                          </Box>
+                        )}
+                      </Box>
+                    </Grid>
+                  </Grid>
+                </TabPanel>
+                
+                {/* Appointments Tab */}
+                <TabPanel value={tabValue} index={1}>
+                  <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+                      <CalendarTodayIcon sx={{ mr: 1, verticalAlign: 'middle', color: 'primary.main' }} />
+                      Appuntamenti
+                    </Typography>
+                    
+                    {/* Filtro per stato appuntamenti */}
+                    <FormControl size="small" sx={{ minWidth: 150 }}>
+                      <InputLabel id="appointment-status-filter-label">Filtra per stato</InputLabel>
+                      <Select
+                        labelId="appointment-status-filter-label"
+                        id="appointment-status-filter"
+                        label="Filtra per stato"
+                        value={appointmentFilterStatus}
+                        onChange={handleAppointmentFilterChange}
+                      >
+                        <MenuItem value="all">Tutti</MenuItem>
+                        <MenuItem value="scheduled">Programmati</MenuItem>
+                        <MenuItem value="completed">Completati</MenuItem>
+                        <MenuItem value="cancelled">Cancellati</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Box>
+                  
+                  {userAppointments.length > 0 ? (
+                    <TableContainer component={Paper} variant="outlined">
+                      <Table size="small">
+                        <TableHead sx={{ bgcolor: '#f5f5f5' }}>
+                          <TableRow>
+                            <TableCell>Data</TableCell>
+                            <TableCell>Ora</TableCell>
+                            <TableCell>Titolo</TableCell>
+                            <TableCell>Note</TableCell>
+                            <TableCell>Stato</TableCell>
+                            <TableCell align="center">Azioni</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {userAppointments
+                            .filter(appointment => appointmentFilterStatus === 'all' || appointment.status === appointmentFilterStatus)
+                            .map((appointment) => (
+                              <TableRow key={appointment.id}>
+                                <TableCell>
+                                  {format(new Date(appointment.appointment_date), 'dd/MM/yyyy', { locale: it })}
+                                </TableCell>
+                                <TableCell>{appointment.time}</TableCell>
+                                <TableCell>{appointment.title || '-'}</TableCell>
+                                <TableCell>{appointment.notes || '-'}</TableCell>
+                                <TableCell>
+                                  <Box
+                                    sx={{
+                                      display: 'inline-block',
+                                      px: 1,
+                                      py: 0.5,
+                                      borderRadius: 1,
+                                      bgcolor: appointment.status === 'completed' ? '#e8f5e9' : 
+                                               appointment.status === 'scheduled' ? '#e3f2fd' : '#fff3e0',
+                                      color: appointment.status === 'completed' ? '#2e7d32' : 
+                                             appointment.status === 'scheduled' ? '#1565c0' : '#e65100',
+                                      fontSize: '0.75rem',
+                                      fontWeight: 'bold'
+                                    }}
+                                  >
+                                    {appointment.status === 'completed' ? 'Completato' : 
+                                     appointment.status === 'scheduled' ? 'Programmato' : 'Cancellato'}
+                                  </Box>
+                                </TableCell>
+                                <TableCell align="center">
+                                  <IconButton 
+                                    size="small" 
+                                    color="primary" 
+                                    title="Visualizza dettagli"
+                                    onClick={() => handleViewAppointmentDetails(appointment)}
+                                  >
+                                    <VisibilityIcon fontSize="small" />
+                                  </IconButton>
+                                </TableCell>
+                              </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  ) : (
+                    <Paper variant="outlined" sx={{ p: 3, textAlign: 'center' }}>
+                      <Typography variant="body1" color="text.secondary">
+                        Nessun appuntamento trovato per questo utente
+                      </Typography>
+                    </Paper>
+                  )}
+                </TabPanel>
               </Grid>
             </Grid>
           )}
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseUserDialog} color="primary">
+            Chiudi
+          </Button>
+        </DialogActions>
+      </Dialog>
+      
+      {/* Appointment Details Dialog */}
+      <Dialog 
+        open={openAppointmentDialog} 
+        onClose={handleCloseAppointmentDialog}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          <Typography variant="h6" fontWeight="bold">Dettagli Appuntamento</Typography>
+        </DialogTitle>
+        <DialogContent dividers>
+          {selectedAppointment && (
+            <Grid container spacing={2}>
+              <Grid item xs={12}>
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+                    <CalendarTodayIcon sx={{ mr: 1, verticalAlign: 'middle', color: 'primary.main' }} />
+                    Data e Ora
+                  </Typography>
+                  <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+                    <Typography variant="body1">
+                      {format(new Date(selectedAppointment.appointment_date), 'dd MMMM yyyy', { locale: it })}
+                    </Typography>
+                    <Typography variant="body1">
+                      Ora: {selectedAppointment.time}
+                    </Typography>
+                  </Paper>
+                </Box>
+              </Grid>
+              
+              <Grid item xs={12}>
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+                    <NoteIcon sx={{ mr: 1, verticalAlign: 'middle', color: 'primary.main' }} />
+                    Note
+                  </Typography>
+                  <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+                    <Typography variant="body1">
+                      {selectedAppointment.notes || 'Nessuna nota disponibile'}
+                    </Typography>
+                  </Paper>
+                </Box>
+              </Grid>
+            </Grid>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseAppointmentDialog} color="primary">
             Chiudi
           </Button>
         </DialogActions>
