@@ -1,404 +1,40 @@
 import express from 'express';
-
-import { Request, Response } from 'express';
-import { calendar_v3 } from 'googleapis';
-import { Router } from 'express';
-import { getDatabase } from '../../db/migrations/migration';
-import type { calendar_v3 } from 'googleapis';
+import { Router, Request, Response } from 'express';
+import { getAuthUrl, handleAuthCallback, handleWebhook, setupWebhook, getCalendarEvents, syncAppointments } from '../controllers/google-calendar.controller';
 import { GoogleCalendarService } from '../services/google-calendar.service';
-
 import { Appointment } from '../interfaces/appointment.interface';
-
-export const googleCalendarRoutes = Router();
-const googleCalendarService = new GoogleCalendarService();
-
-// Interfaccia per le impostazioni del calendario
-interface CalendarSettings {
-  clientId?: string;
-  clientSecret?: string;
-  redirectUri?: string;
-  tokens?: any;
-  googleCalendarEnabled?: boolean;
-  channelId?: string;
-  resourceId?: string;
-  expiration?: string;
-}
-
-// Interfaccia per le impostazioni dell'app
-interface AppSetting {
-  id: number;
-  key: string;
-  value: string;
-  created_at?: string;
-  updated_at?: string;
-}
+import { calendar_v3 } from 'googleapis/build/src/apis/calendar/v3';
+import { getDatabase } from '../config/database-sqlite';
+import { AppSetting } from '../interfaces/app-setting.interface';
+import { CalendarSettings } from '../interfaces/calendar-settings.interface';
+import { convertToGoogleCalendarEvent } from '../utils/google-calendar-utils';
 
 const router = express.Router();
 
-// Interfaccia per gli eventi di Google Calendar
-interface GoogleCalendarEvent {
-  id: string;
-  summary: string;
-  description?: string;
-  start: {
-    dateTime: string;
-    timeZone: string;
-  };
-  end: {
-    dateTime: string;
-    timeZone: string;
-  };
-  status: string;
-}
+// Esporta le rotte
+export const googleCalendarRoutes = router;
 
-// Funzione per convertire un evento di Google Calendar in un evento compatibile
-function convertToGoogleCalendarEvent(event: calendar_v3.Schema$Event): GoogleCalendarEvent {
-  if (!event.id || !event.start?.dateTime || !event.end?.dateTime) {
-    throw new Error('Evento Google Calendar non valido');
-  }
-  
-  return {
-    id: event.id,
-    summary: event.summary || 'Evento senza titolo',
-    description: event.description || '',
-    start: {
-      dateTime: event.start.dateTime,
-      timeZone: event.start.timeZone || 'Europe/Rome'
-    },
-    end: {
-      dateTime: event.end.dateTime,
-      timeZone: event.end.timeZone || 'Europe/Rome'
-    },
-    status: event.status || 'confirmed'
-  };
-}
 
 // Endpoint per ottenere gli eventi dal calendario
-router.get('/events', async (req: Request, res: Response) => {
-  try {
-    const db = getDatabase();
-    const setting = db.prepare('SELECT * FROM app_settings WHERE key = ?').get('calendar') as AppSetting | undefined;
-    
-    if (!setting) {
-      return res.status(400).json({ message: 'Impostazioni di Google Calendar non configurate' });
-    }
-    
-    // Converti il valore JSON in oggetto JavaScript
-    let calendarSettings: CalendarSettings;
-    try {
-      calendarSettings = JSON.parse(setting.value);
-    } catch (error) {
-      return res.status(500).json({ message: 'Errore nel parsing delle impostazioni' });
-    }
-    
-    if (!calendarSettings.tokens) {
-      return res.status(400).json({ message: 'Token di Google Calendar mancanti' });
-    }
-    
-    // Importa dinamicamente le librerie di Google
-    const { google } = await import('googleapis');
-    
-    // Crea un client OAuth2
-    const oauth2Client = new google.auth.OAuth2(
-      calendarSettings.clientId,
-      calendarSettings.clientSecret,
-      calendarSettings.redirectUri
-    );
-    
-    // Imposta i token
-    oauth2Client.setCredentials(calendarSettings.tokens);
-    
-    // Crea un client per Google Calendar
-    const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
-    
-    // Ottieni gli eventi dal calendario
-    const response = await calendar.events.list({
-      calendarId: 'primary',
-      timeMin: (new Date()).toISOString(),
-      maxResults: 10,
-      singleEvents: true,
-      orderBy: 'startTime',
-    });
-    
-    const events = response.data.items || [];
-    
-    // Converti gli eventi nel formato richiesto
-    const formattedEvents = events.map(event => {
-      try {
-        return convertToGoogleCalendarEvent(event);
-      } catch (error) {
-        console.error('Errore nella conversione dell\'evento:', error);
-        return null;
-      }
-    }).filter(event => event !== null);
-    
-    return res.json({
-      message: 'Eventi recuperati con successo',
-      events: formattedEvents
-    });
-  } catch (error: any) {
-    console.error('Errore durante il recupero degli eventi:', error);
-    return res.status(500).json({ 
-      message: 'Errore durante il recupero degli eventi', 
-      error: error.message 
-    });
-  }
-});
+router.get('/events', getCalendarEvents);
 
 // Endpoint per l'autenticazione OAuth2 di Google Calendar
-router.get('/auth', async (req: Request, res: Response) => {
-  try {
-    const db = getDatabase();
-    
-    // Verifica se la tabella app_settings esiste
-    const tableExists = db.prepare(`
-      SELECT name FROM sqlite_master 
-      WHERE type='table' AND name='app_settings'
-    `).get();
-    
-    if (!tableExists) {
-      return res.status(400).json({ message: 'Impostazioni non configurate' });
-    }
-    
-    const setting = db.prepare('SELECT * FROM app_settings WHERE key = ?').get('calendar') as AppSetting | undefined;
-    
-    if (!setting) {
-      return res.status(400).json({ message: 'Impostazioni di Google Calendar non configurate' });
-    }
-    
-    // Converti il valore JSON in oggetto JavaScript
-    let calendarSettings: CalendarSettings;
-    try {
-      calendarSettings = JSON.parse(setting.value);
-    } catch (error) {
-      return res.status(500).json({ message: 'Errore nel parsing delle impostazioni' });
-    }
-    
-    if (!calendarSettings.clientId || !calendarSettings.clientSecret || !calendarSettings.redirectUri) {
-      return res.status(400).json({ message: 'Credenziali OAuth2 mancanti' });
-    }
-    
-    // Reindirizza l'utente alla pagina di autenticazione di Google
-    res.redirect(`/api/google-calendar/auth-url?clientId=${calendarSettings.clientId}&clientSecret=${calendarSettings.clientSecret}&redirectUri=${calendarSettings.redirectUri}`);
-  } catch (error: any) {
-    console.error('Errore durante l\'autenticazione con Google Calendar:', error);
-    return res.status(500).json({ 
-      message: 'Errore durante l\'autenticazione con Google Calendar', 
-      error: error.message 
-    });
-  }
-});
+router.get('/auth', getAuthUrl);
 
 // Endpoint per generare l'URL di autenticazione
-router.get('/auth-url', async (req: Request, res: Response) => {
-  try {
-    const { clientId, clientSecret, redirectUri } = req.query;
-    
-    if (!clientId || !clientSecret || !redirectUri) {
-      return res.status(400).json({ message: 'Parametri mancanti' });
-    }
-    
-    // Importa dinamicamente le librerie di Google
-    const { google } = await import('googleapis');
-    
-    // Crea un client OAuth2
-    const oauth2Client = new google.auth.OAuth2(
-      clientId as string,
-      clientSecret as string,
-      redirectUri as string
-    );
-    
-    // Genera l'URL di autenticazione
-    const scopes = ['https://www.googleapis.com/auth/calendar'];
-    const authUrl = oauth2Client.generateAuthUrl({
-      access_type: 'offline',
-      scope: scopes,
-    });
-    
-    // Reindirizza l'utente all'URL di autenticazione di Google
-    res.redirect(authUrl);
-  } catch (error: any) {
-    console.error('Errore durante la generazione dell\'URL di autenticazione:', error);
-    return res.status(500).json({ 
-      message: 'Errore durante la generazione dell\'URL di autenticazione', 
-      error: error.message 
-    });
-  }
-});
+router.get('/auth-url', getAuthUrl);
 
 // Endpoint di callback per l'autenticazione OAuth2
-router.get('/callback', async (req: Request, res: Response) => {
-  try {
-    const { code } = req.query;
-    
-    if (!code) {
-      return res.status(400).json({ message: 'Codice di autorizzazione mancante' });
-    }
-    
-    const db = getDatabase();
-    const setting = db.prepare('SELECT * FROM app_settings WHERE key = ?').get('calendar') as AppSetting | undefined;
-    
-    if (!setting) {
-      return res.status(400).json({ message: 'Impostazioni di Google Calendar non configurate' });
-    }
-    
-    // Converti il valore JSON in oggetto JavaScript
-    let calendarSettings: CalendarSettings;
-    try {
-      calendarSettings = JSON.parse(setting.value);
-    } catch (error) {
-      return res.status(500).json({ message: 'Errore nel parsing delle impostazioni' });
-    }
-    
-    // Importa dinamicamente le librerie di Google
-    const { google } = await import('googleapis');
-    
-    // Crea un client OAuth2
-    const oauth2Client = new google.auth.OAuth2(
-      calendarSettings.clientId,
-      calendarSettings.clientSecret,
-      calendarSettings.redirectUri
-    );
-    
-    // Scambia il codice di autorizzazione con i token di accesso
-    const { tokens } = await oauth2Client.getToken(code as string);
-    
-    // Salva i token nel database
-    calendarSettings.tokens = tokens;
-    
-    // Aggiorna le impostazioni nel database
-    db.prepare('UPDATE app_settings SET value = ? WHERE key = ?').run(
-      JSON.stringify(calendarSettings),
-      'calendar'
-    );
-    
-    // Reindirizza l'utente alla pagina delle impostazioni
-    res.redirect('/settings?tab=calendar&auth=success');
-  } catch (error: any) {
-    console.error('Errore durante lo scambio del codice di autorizzazione:', error);
-    return res.status(500).json({ 
-      message: 'Errore durante lo scambio del codice di autorizzazione', 
-      error: error.message 
-    });
-  }
-});
+router.get('/callback', handleAuthCallback);
 
 // Webhook per ricevere notifiche di eventi da Google Calendar
-router.post('/webhook', async (req: Request, res: Response) => {
-  try {
-    // Verifica l'intestazione X-Goog-Resource-State per determinare il tipo di evento
-    const resourceState = req.headers['x-goog-resource-state'];
-    const resourceId = req.headers['x-goog-resource-id'] as string;
-    const channelId = req.headers['x-goog-channel-id'] as string;
-    
-    // Risponde immediatamente a Google per confermare la ricezione
-    res.status(200).send('OK');
-    
-    // Processa l'evento in background
-    processCalendarEvent(resourceState as string, resourceId, channelId, req.body);
-  } catch (error: any) {
-    console.error('Errore durante l\'elaborazione del webhook:', error);
-    // Risponde comunque con 200 per evitare che Google riprovi
-    res.status(200).send('OK');
-  }
-});
+router.post('/webhook', handleWebhook);
 
-// Funzione per processare gli eventi di Google Calendar
-async function processCalendarEvent(
-  resourceState: string,
-  resourceId: string,
-  channelId: string,
-  eventData: any
-) {
-  try {
-    const db = getDatabase();
-    const setting = db.prepare('SELECT * FROM app_settings WHERE key = ?').get('calendar') as AppSetting | undefined;
-    
-    if (!setting) {
-      console.error('Impostazioni di Google Calendar non configurate');
-      return;
-    }
-    
-    // Converti il valore JSON in oggetto JavaScript
-    let calendarSettings: CalendarSettings;
-    try {
-      calendarSettings = JSON.parse(setting.value);
-    } catch (error) {
-      console.error('Errore nel parsing delle impostazioni');
-      return;
-    }
-    
-    if (!calendarSettings.tokens) {
-      console.error('Token di Google Calendar mancanti');
-      return;
-    }
-    
-    // Importa dinamicamente le librerie di Google
-    const { google } = await import('googleapis');
-    
-    // Crea un client OAuth2
-    const oauth2Client = new google.auth.OAuth2(
-      calendarSettings.clientId,
-      calendarSettings.clientSecret,
-      calendarSettings.redirectUri
-    );
-    
-    // Imposta i token
-    oauth2Client.setCredentials(calendarSettings.tokens);
-    
-    // Crea un client per Google Calendar
-    const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
-    
-    // Gestisci l'evento in base al tipo
-    switch (resourceState) {
-      case 'sync':
-        // Inizializzazione del canale di notifica
-        console.log('Canale di notifica inizializzato:', channelId);
-        break;
-        
-      case 'exists':
-        // Evento creato o modificato
-        // Ottieni i dettagli dell'evento
-        const event = await calendar.events.get({
-          calendarId: 'primary',
-          eventId: resourceId
-        });
-        
-        // Verifica se l'evento esiste già nel database
-        const existingAppointment = db.prepare(
-          'SELECT * FROM appointments WHERE google_calendar_event_id = ?'
-        ).get(resourceId) as { id: number } | undefined;
-        
-        if (existingAppointment) {
-          // Aggiorna l'appuntamento esistente
-          updateAppointmentFromEvent(existingAppointment.id, event.data);
-        } else {
-          // Crea un nuovo appuntamento
-          createAppointmentFromEvent(event.data);
-        }
-        break;
-        
-      case 'not_exists':
-        // Evento eliminato
-        // Trova l'appuntamento associato all'evento
-        const appointmentToDelete = db.prepare(
-          'SELECT * FROM appointments WHERE google_calendar_event_id = ?'
-        ).get(resourceId) as { id: number } | undefined;
-        
-        if (appointmentToDelete) {
-          // Elimina l'appuntamento
-          db.prepare('DELETE FROM appointments WHERE id = ?').run(appointmentToDelete.id);
-          console.log(`Appuntamento ${appointmentToDelete.id} eliminato in seguito all'eliminazione dell'evento su Google Calendar`);
-        }
-        break;
-        
-      default:
-        console.log(`Tipo di evento non gestito: ${resourceState}`);
-    }
-  } catch (error: any) {
-    console.error('Errore durante l\'elaborazione dell\'evento di Google Calendar:', error);
-  }
-}
+// Endpoint per configurare il webhook
+router.post('/setup-webhook', setupWebhook);
+
+// Endpoint per sincronizzare gli appuntamenti con Google Calendar
+router.post('/sync', syncAppointments);
 
 // Funzione per creare un appuntamento da un evento di Google Calendar
 async function createAppointmentFromEvent(eventData: calendar_v3.Schema$Event) {
@@ -419,6 +55,9 @@ async function createAppointmentFromEvent(eventData: calendar_v3.Schema$Event) {
     }
     
     // Estrai la data e l'ora dall'evento
+    if (!googleEvent.start?.dateTime) {
+      throw new Error('Missing start dateTime in Google Calendar event');
+    }
     const startDateTime = new Date(googleEvent.start.dateTime);
     const date = startDateTime.toISOString().split('T')[0];
     const time = startDateTime.toTimeString().split(' ')[0].substring(0, 5);
@@ -464,6 +103,9 @@ async function updateAppointmentFromEvent(appointmentId: number, eventData: cale
     }
     
     // Estrai la data e l'ora dall'evento
+    if (!googleEvent.start?.dateTime) {
+      throw new Error('Missing start dateTime in Google Calendar event');
+    }
     const startDateTime = new Date(googleEvent.start.dateTime);
     const date = startDateTime.toISOString().split('T')[0];
     const time = startDateTime.toTimeString().split(' ')[0].substring(0, 5);
@@ -798,7 +440,8 @@ googleCalendarRoutes.post('/api/google/webhook', async (req, res) => {
     }
 
     const event = req.body;
-    await googleCalendarService.handleGoogleUpdate(event.id);
+    const googleCalendarService = new GoogleCalendarService();
+    await googleCalendarService.processCalendarEvent(resourceState as string, resourceId as string, channelId as string);
     
     res.status(200).send('Event processed');
   } catch (error) {
@@ -810,6 +453,7 @@ googleCalendarRoutes.post('/api/google/webhook', async (req, res) => {
 googleCalendarRoutes.post('/api/google/webhook/setup', async (req, res) => {
   try {
     const webhookUrl = req.body.webhookUrl;
+    const googleCalendarService = new GoogleCalendarService();
     await googleCalendarService.setupWebhook(webhookUrl);
     res.status(200).json({ message: 'Webhook configurato correttamente' });
   } catch (error) {
@@ -817,3 +461,4 @@ googleCalendarRoutes.post('/api/google/webhook/setup', async (req, res) => {
     res.status(500).json({ error: 'Errore nella configurazione del webhook' });
   }
 });
+

@@ -685,6 +685,11 @@ const Settings: React.FC = () => {
             {licenseFeatures.googleCalendarIntegration && (
               <TabPanel value={tabValue} index={licenseFeatures.whatsappIntegration ? 2 : 1}>
                 <Typography variant="h6" gutterBottom>Integrazione Google Calendar</Typography>
+                
+                <Alert severity="info" sx={{ mb: 3 }}>
+                  L'integrazione con Google Calendar permette di sincronizzare gli appuntamenti tra SlabsLink e il tuo calendario Google.
+                </Alert>
+                
                 <FormControlLabel
                   control={
                     <Switch
@@ -697,6 +702,82 @@ const Settings: React.FC = () => {
                   sx={{ mb: 2 }}
                 />
                 
+                <Paper sx={{ p: 3, mb: 4, bgcolor: '#f9f9f9' }}>
+                  <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+                    Guida alla configurazione di Google Calendar
+                  </Typography>
+                  
+                  <Typography variant="body1" paragraph>
+                    Per configurare l'integrazione con Google Calendar, segui questi passaggi:
+                  </Typography>
+                  
+                  <Typography variant="body1" component="div">
+                    <ol>
+                      <li>
+                        <strong>Crea un progetto nella Google Cloud Console:</strong>
+                        <ul>
+                          <li>Vai alla <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer">Google Cloud Console</a></li>
+                          <li>Crea un nuovo progetto o seleziona un progetto esistente</li>
+                          <li>Prendi nota del nome del progetto</li>
+                        </ul>
+                      </li>
+                      <li>
+                        <strong>Abilita l'API Google Calendar:</strong>
+                        <ul>
+                          <li>Nel menu laterale, vai su "API e servizi" - "Libreria"</li>
+                          <li>Cerca "Google Calendar API" e selezionala</li>
+                          <li>Clicca su "Abilita"</li>
+                        </ul>
+                      </li>
+                      <li>
+                        <strong>Configura la schermata di consenso OAuth:</strong>
+                        <ul>
+                          <li>Nel menu laterale, vai su "API e servizi" - "Schermata di consenso OAuth"</li>
+                          <li>Seleziona "Esterno" come tipo di utente e clicca su "Crea"</li>
+                          <li>Compila i campi obbligatori (nome app, email di supporto, ecc.)</li>
+                          <li>Aggiungi il dominio della tua applicazione nei "Domini autorizzati"</li>
+                          <li>Clicca su "Salva e continua"</li>
+                          <li>Nella sezione "Ambiti", aggiungi gli ambiti necessari per Google Calendar (ad es. "./auth/calendar" e "./auth/calendar.events")</li>
+                          <li>Completa la configurazione e torna alla dashboard</li>
+                        </ul>
+                      </li>
+                      <li>
+                        <strong>Crea le credenziali OAuth 2.0:</strong>
+                        <ul>
+                          <li>Nel menu laterale, vai su "API e servizi" - "Credenziali"</li>
+                          <li>Clicca su "Crea credenziali" e seleziona "ID client OAuth"</li>
+                          <li>Seleziona "Applicazione Web" come tipo di applicazione</li>
+                          <li>Assegna un nome all'applicazione</li>
+                          <li>Aggiungi l'URI di reindirizzamento: <code>{calendarSettings.redirectUri}</code></li>
+                          <li>Clicca su "Crea"</li>
+                          <li>Copia il "Client ID" e il "Client Secret" generati e inseriscili nei campi sottostanti</li>
+                        </ul>
+                      </li>
+                      <li>
+                        <strong>Configura SlabsLink:</strong>
+                        <ul>
+                          <li>Inserisci il Client ID e il Client Secret nei campi sottostanti</li>
+                          <li>Verifica che l'URI di reindirizzamento corrisponda a quello configurato in Google Cloud Console</li>
+                          <li>Salva le impostazioni</li>
+                        </ul>
+                      </li>
+                      <li>
+                        <strong>Autorizza l'applicazione:</strong>
+                        <ul>
+                          <li>Dopo aver salvato le impostazioni, riavvia l'applicazione</li>
+                          <li>Vai alla pagina degli appuntamenti</li>
+                          <li>Clicca sul pulsante "Autorizza Google Calendar"</li>
+                          <li>Segui le istruzioni per autorizzare l'accesso al tuo calendario Google</li>
+                        </ul>
+                      </li>
+                    </ol>
+                  </Typography>
+                  
+                  <Typography variant="body1" paragraph sx={{ mt: 2 }}>
+                    <strong>Nota:</strong> Se stai utilizzando SlabsLink in ambiente di sviluppo (localhost), assicurati di aggiungere anche <code>http://localhost:3000/auth/google/callback</code> come URI di reindirizzamento autorizzato nelle credenziali OAuth 2.0.
+                  </Typography>
+                </Paper>
+                
                 <Grid container spacing={3}>
                   <Grid item xs={12} md={4}>
                     <TextField
@@ -707,6 +788,7 @@ const Settings: React.FC = () => {
                       onChange={handleCalendarSettingsChange}
                       margin="normal"
                       disabled={!calendarSettings.googleCalendarEnabled}
+                      helperText="L'ID client OAuth 2.0 generato nella Google Cloud Console"
                     />
                   </Grid>
                   <Grid item xs={12} md={4}>
@@ -719,6 +801,7 @@ const Settings: React.FC = () => {
                       margin="normal"
                       type="password"
                       disabled={!calendarSettings.googleCalendarEnabled}
+                      helperText="Il secret client OAuth 2.0 generato nella Google Cloud Console"
                     />
                   </Grid>
                   <Grid item xs={12} md={4}>
@@ -730,9 +813,37 @@ const Settings: React.FC = () => {
                       onChange={handleCalendarSettingsChange}
                       margin="normal"
                       disabled={!calendarSettings.googleCalendarEnabled}
+                      helperText="L'URI di reindirizzamento deve corrispondere a quello configurato in Google Cloud Console"
                     />
                   </Grid>
                 </Grid>
+                
+                <Box sx={{ mt: 3, p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
+                  <Typography variant="subtitle2" color="text.secondary" paragraph>
+                    Dopo aver configurato le credenziali e salvato le impostazioni, è necessario autorizzare l'applicazione ad accedere al tuo calendario Google cliccando sul pulsante qui sotto.
+                  </Typography>
+                  
+                  <Button 
+                    variant="contained" 
+                    color="primary"
+                    disabled={!calendarSettings.googleCalendarEnabled || !calendarSettings.clientId || !calendarSettings.clientSecret}
+                    onClick={() => {
+                      window.location.href = `${API_BASE_URL}/google-calendar/auth`;
+                    }}
+                    sx={{ mt: 1 }}
+                  >
+                    Autorizza Google Calendar
+                  </Button>
+                  
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                    <strong>Nota:</strong> Se dopo aver cliccato sul pulsante non viene visualizzata la pagina di autorizzazione di Google, verifica che:
+                    <ul>
+                      <li>Le credenziali Client ID e Client Secret siano corrette</li>
+                      <li>L'URI di reindirizzamento sia configurato correttamente nella console Google Cloud</li>
+                      <li>Il server sia in esecuzione e raggiungibile</li>
+                    </ul>
+                  </Typography>
+                </Box>
               </TabPanel>
             )}
             

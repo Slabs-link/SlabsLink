@@ -290,6 +290,8 @@ import { googleCalendarRoutes } from './routes/google-calendar.routes';
 // Register routes
 app.use('/api/license', licenseRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/google-calendar', googleCalendarRoutes);
+// Manteniamo anche il vecchio percorso per retrocompatibilità
 app.use('/api/google', googleCalendarRoutes);
 
 // Not found middleware
