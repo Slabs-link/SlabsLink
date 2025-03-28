@@ -148,6 +148,16 @@ const Dashboard: React.FC = () => {
   const [openUserDialog, setOpenUserDialog] = useState(false);
   const [selectedUser, setSelectedUser] = useState<Patient | null>(null);
   const [tabValue, setTabValue] = useState(0);
+  const [userAppointments, setUserAppointments] = useState<DashboardAppointment[]>([]);
+  const [openAppointmentDialog, setOpenAppointmentDialog] = useState(false);
+  const [selectedAppointment, setSelectedAppointment] = useState<DashboardAppointment | null>(null);
+
+  const handleCloseAppointmentDialog = () => {
+    setOpenAppointmentDialog(false);
+    setSelectedAppointment(null);
+  };
+
+
 
   const fetchMonthAppointments = async (date: Date) => {
     try {
@@ -285,7 +295,7 @@ const Dashboard: React.FC = () => {
     setTabValue(newValue);
   };
   
-  // Le funzioni di gestione dei dettagli degli appuntamenti sono state rimosse
+  // Le funzioni di gestione dei dettagli degli appuntamenti sono state rimoss
   
   // La funzione di filtro degli appuntamenti è stata rimossa
 
@@ -741,6 +751,7 @@ const Dashboard: React.FC = () => {
       </Box>
     </Box>
   );
+
 };
 
 export default Dashboard;

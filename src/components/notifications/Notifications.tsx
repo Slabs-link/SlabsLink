@@ -189,15 +189,36 @@ const Notifications: React.FC = () => {
       console.log('Dati statistiche:', response.data.stats);
       console.log('Notifiche ricevute:', response.data.notifications.length);
 
+      // Aggiornamento corretto delle statistiche per i totalizzatori
       const statsData = response.data.stats || {};
-      setStats({
+      
+      // Calcola le statistiche anche in base alle notifiche ricevute se stats non è disponibile
+      const calculatedStats = {
         sent_count: statsData.sent_count ?? 0,
         failed_count: statsData.failed_count ?? 0,
         total_count: statsData.total_count ?? 0,
         pending_count: statsData.pending_count ?? 0,
         categories: statsData.categories || {}
+      };
+      
+      // Se le statistiche dal server sono vuote, calcoliamole dalle notifiche
+      if (!statsData.total_count && Array.isArray(response.data.notifications)) {
+        calculatedStats.total_count = response.data.notifications.length;
+        calculatedStats.sent_count = response.data.notifications.filter((n: Notification) => n.status === 'sent').length;
+        calculatedStats.pending_count = response.data.notifications.filter((n: Notification) => n.status === 'pending').length;
+        calculatedStats.failed_count = response.data.notifications.filter((n: Notification) => n.status === 'failed').length;
+      }
+      
+      setStats(calculatedStats);
+      
+      // Aggiorniamo anche i contatori visualizzati nei totalizzatori
+      document.querySelectorAll('.MuiTypography-h3').forEach((element, index) => {
+        if (index === 0) element.textContent = String(calculatedStats.total_count);
+        if (index === 1) element.textContent = String(calculatedStats.sent_count);
+        if (index === 2) element.textContent = String(calculatedStats.pending_count);
+        if (index === 3) element.textContent = String(calculatedStats.failed_count);
       });
-      console.log('Dati statistiche elaborati:', statsData);
+      console.log('Dati statistiche elaborati:', calculatedStats);
     } catch (error) {
       console.error('Error fetching notifications:', error);
       setNotifications([]);
@@ -211,9 +232,9 @@ const Notifications: React.FC = () => {
     }
   }, []);
 
-  // Funzione per caricare le notifiche
+  // Funzione per caricare le notifiche ogni 5 minuti invece che ogni 5 secondi
   useEffect(() => {
-    const interval = setInterval(fetchNotifications, 5000);
+    const interval = setInterval(fetchNotifications, 300000); // 5 minuti = 300000 ms
     return () => clearInterval(interval);
   }, [fetchNotifications]);
 
@@ -681,7 +702,7 @@ const Notifications: React.FC = () => {
                   Totale Notifiche
                 </Typography>
                 <Typography variant="h3" component="div" sx={{ fontWeight: 'bold' }}>
-                  {stats?.total_count ?? 0}
+                  {stats.total_count}
                 </Typography>
               </CardContent>
             </Card>
@@ -698,7 +719,7 @@ const Notifications: React.FC = () => {
                   Inviate
                 </Typography>
                 <Typography variant="h3" component="div" sx={{ fontWeight: 'bold', color: '#4caf50' }}>
-                  {stats?.sent_count ?? 0}
+                  {stats.sent_count}
                 </Typography>
               </CardContent>
             </Card>
@@ -715,7 +736,7 @@ const Notifications: React.FC = () => {
                   In Attesa
                 </Typography>
                 <Typography variant="h3" component="div" sx={{ fontWeight: 'bold', color: '#2196f3' }}>
-                  {stats?.pending_count ?? 0}
+                  {stats.pending_count}
                 </Typography>
                 {stats.pending_count > 0 && (
                   <Button 
@@ -743,7 +764,7 @@ const Notifications: React.FC = () => {
                   Fallite
                 </Typography>
                 <Typography variant="h3" component="div" sx={{ fontWeight: 'bold', color: '#f44336' }}>
-                  {stats?.failed_count ?? 0}
+                  {stats.failed_count}
                 </Typography>
               </CardContent>
             </Card>

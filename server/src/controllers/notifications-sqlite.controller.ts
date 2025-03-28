@@ -2,6 +2,14 @@ import { Request, Response } from 'express';
 import { getDatabase } from '../config/database-sqlite';
 import { Template, User, Appointment, Notification } from '../interfaces/notifications.interface';
 
+// Interfaccia per le statistiche delle notifiche
+interface NotificationCountStats {
+  total_count: number;
+  sent_count: number;
+  pending_count: number;
+  failed_count: number;
+}
+
 // Get all notifications
 export const getAllNotifications = async (req: Request, res: Response) => {
   try {
@@ -14,9 +22,37 @@ export const getAllNotifications = async (req: Request, res: Response) => {
       ORDER BY n.created_at DESC
     `).all();
     
+    // Calcola le statistiche delle notifiche
+    const stats = {
+      total_count: 0,
+      sent_count: 0,
+      pending_count: 0,
+      failed_count: 0,
+      categories: {}
+    };
+    
+    // Esegui query per ottenere i conteggi
+    const countStats = db.prepare(`
+      SELECT 
+        COUNT(*) as total_count,
+        SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) as sent_count,
+        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_count,
+        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_count
+      FROM notifications
+    `).get() as NotificationCountStats;
+    
+    // Aggiorna le statistiche con i risultati della query
+    if (countStats) {
+      stats.total_count = countStats.total_count || 0;
+      stats.sent_count = countStats.sent_count || 0;
+      stats.pending_count = countStats.pending_count || 0;
+      stats.failed_count = countStats.failed_count || 0;
+    }
+    
     // Always return array even if empty
     return res.json({
       notifications: notifications || [],
+      stats: stats,
       success: true
     });
   } catch (error: any) {
