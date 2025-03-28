@@ -148,10 +148,6 @@ const Dashboard: React.FC = () => {
   const [openUserDialog, setOpenUserDialog] = useState(false);
   const [selectedUser, setSelectedUser] = useState<Patient | null>(null);
   const [tabValue, setTabValue] = useState(0);
-  const [userAppointments, setUserAppointments] = useState<DashboardAppointment[]>([]);
-  const [appointmentFilterStatus, setAppointmentFilterStatus] = useState('all');
-  const [openAppointmentDialog, setOpenAppointmentDialog] = useState(false);
-  const [selectedAppointment, setSelectedAppointment] = useState<DashboardAppointment | null>(null);
 
   const fetchMonthAppointments = async (date: Date) => {
     try {
@@ -202,7 +198,30 @@ const Dashboard: React.FC = () => {
   const handleViewAllAppointments = () => {
     navigate('/appointments');
   };
-  
+  // Fetch user appointments from the API
+  const fetchUserAppointments = async (userId: number) => {
+    try {
+        // Fetch appointments for this user from the API
+        const appointmentsResponse = await axios.get(`http://localhost:3001/api/appointments/patient/${userId}`);
+        if (appointmentsResponse.data && appointmentsResponse.data.appointments && Array.isArray(appointmentsResponse.data.appointments)) {
+            const formattedAppointments = appointmentsResponse.data.appointments.map((appointment: any) => ({
+                id: appointment.id,
+                appointment_date: appointment.appointment_date || appointment.date,
+                time: appointment.appointment_time || appointment.time,
+                notes: appointment.notes || '',
+                title: appointment.title || '',
+                status: appointment.status || 'scheduled'
+            }));
+            setUserAppointments(formattedAppointments);
+        } else {
+            // If no appointments or invalid response, show empty list
+            setUserAppointments([]);
+        }
+    } catch (appointmentError) {
+        console.error('Error fetching user appointments:', appointmentError);
+        setUserAppointments([]);
+    }
+  };
   const handleViewAllUsers = () => {
     navigate('/users');
   };
@@ -227,7 +246,7 @@ const Dashboard: React.FC = () => {
           // Map the API response to the expected format
           const formattedAppointments = appointmentsResponse.data.appointments.map((appointment: any) => ({
             id: appointment.id,
-            date: appointment.appointment_date || appointment.date,
+            appointment_date: appointment.appointment_date || appointment.date,
             time: appointment.appointment_time || appointment.time,
             notes: appointment.notes || '',
             title: appointment.title || '',
@@ -266,19 +285,9 @@ const Dashboard: React.FC = () => {
     setTabValue(newValue);
   };
   
-  const handleViewAppointmentDetails = (appointment: DashboardAppointment) => {
-    setSelectedAppointment(appointment);
-    setOpenAppointmentDialog(true);
-  };
+  // Le funzioni di gestione dei dettagli degli appuntamenti sono state rimosse
   
-  const handleCloseAppointmentDialog = () => {
-    setOpenAppointmentDialog(false);
-    setSelectedAppointment(null);
-  };
-  
-  const handleAppointmentFilterChange = (event: any) => {
-    setAppointmentFilterStatus(event.target.value);
-  };
+  // La funzione di filtro degli appuntamenti è stata rimossa
 
   const handlePrevMonth = () => {
     const prevMonth = subMonths(currentMonth, 1);
@@ -340,7 +349,7 @@ const Dashboard: React.FC = () => {
         {/* User Details Dialog */}
         <Dialog open={openUserDialog} onClose={handleCloseUserDialog} maxWidth="lg" fullWidth>
           <DialogTitle>
-            <Typography variant="h6" fontWeight="bold">Dettagli Utente</Typography>
+            <Typography variant="h6" component="h3" fontWeight="bold">Dettagli Utente</Typography>
           </DialogTitle>
           <DialogContent dividers>
             {selectedUser && (
@@ -366,8 +375,7 @@ const Dashboard: React.FC = () => {
               <Grid item xs={12}>
                 <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
                   <Tabs value={tabValue} onChange={handleTabChange} aria-label="user details tabs">
-                    <Tab label="INFORMAZIONI MEDICHE" id="user-tab-0" aria-controls="user-tabpanel-0" />
-                    <Tab label="APPUNTAMENTI" id="user-tab-1" aria-controls="user-tabpanel-1" />
+                    <Tab label="Informazioni" id="user-tab-0" aria-controls="user-tabpanel-0" />
                   </Tabs>
                 </Box>
                 
@@ -438,98 +446,7 @@ const Dashboard: React.FC = () => {
                   </Grid>
                 </TabPanel>
                 
-                {/* Appointments Tab */}
-                <TabPanel value={tabValue} index={1}>
-                  <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-                      <CalendarTodayIcon sx={{ mr: 1, verticalAlign: 'middle', color: 'primary.main' }} />
-                      Appuntamenti
-                    </Typography>
-                    
-                    {/* Filtro per stato appuntamenti */}
-                    <FormControl size="small" sx={{ minWidth: 150 }}>
-                      <InputLabel id="appointment-status-filter-label">Filtra per stato</InputLabel>
-                      <Select
-                        labelId="appointment-status-filter-label"
-                        id="appointment-status-filter"
-                        label="Filtra per stato"
-                        value={appointmentFilterStatus}
-                        onChange={handleAppointmentFilterChange}
-                      >
-                        <MenuItem value="all">Tutti</MenuItem>
-                        <MenuItem value="scheduled">Programmati</MenuItem>
-                        <MenuItem value="completed">Completati</MenuItem>
-                        <MenuItem value="cancelled">Cancellati</MenuItem>
-                      </Select>
-                    </FormControl>
-                  </Box>
-                  
-                  {userAppointments.length > 0 ? (
-                    <TableContainer component={Paper} variant="outlined">
-                      <Table size="small">
-                        <TableHead sx={{ bgcolor: '#f5f5f5' }}>
-                          <TableRow>
-                            <TableCell>Data</TableCell>
-                            <TableCell>Ora</TableCell>
-                            <TableCell>Titolo</TableCell>
-                            <TableCell>Note</TableCell>
-                            <TableCell>Stato</TableCell>
-                            <TableCell align="center">Azioni</TableCell>
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {userAppointments
-                            .filter(appointment => appointmentFilterStatus === 'all' || appointment.status === appointmentFilterStatus)
-                            .map((appointment) => (
-                              <TableRow key={appointment.id}>
-                                <TableCell>
-                                  {format(new Date(appointment.appointment_date), 'dd/MM/yyyy', { locale: it })}
-                                </TableCell>
-                                <TableCell>{appointment.time}</TableCell>
-                                <TableCell>{appointment.title || '-'}</TableCell>
-                                <TableCell>{appointment.notes || '-'}</TableCell>
-                                <TableCell>
-                                  <Box
-                                    sx={{
-                                      display: 'inline-block',
-                                      px: 1,
-                                      py: 0.5,
-                                      borderRadius: 1,
-                                      bgcolor: appointment.status === 'completed' ? '#e8f5e9' : 
-                                               appointment.status === 'scheduled' ? '#e3f2fd' : '#fff3e0',
-                                      color: appointment.status === 'completed' ? '#2e7d32' : 
-                                             appointment.status === 'scheduled' ? '#1565c0' : '#e65100',
-                                      fontSize: '0.75rem',
-                                      fontWeight: 'bold'
-                                    }}
-                                  >
-                                    {appointment.status === 'completed' ? 'Completato' : 
-                                     appointment.status === 'scheduled' ? 'Programmato' : 'Cancellato'}
-                                  </Box>
-                                </TableCell>
-                                <TableCell align="center">
-                                  <IconButton 
-                                    size="small" 
-                                    color="primary" 
-                                    title="Visualizza dettagli"
-                                    onClick={() => handleViewAppointmentDetails(appointment)}
-                                  >
-                                    <VisibilityIcon fontSize="small" />
-                                  </IconButton>
-                                </TableCell>
-                              </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </TableContainer>
-                  ) : (
-                    <Paper variant="outlined" sx={{ p: 3, textAlign: 'center' }}>
-                      <Typography variant="body1" color="text.secondary">
-                        Nessun appuntamento trovato per questo utente
-                      </Typography>
-                    </Paper>
-                  )}
-                </TabPanel>
+                {/* La scheda Appuntamenti è stata rimossa */}
               </Grid>
             </Grid>
           )}

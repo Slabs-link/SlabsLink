@@ -403,6 +403,7 @@ export const createAppointment = async (req: Request, res: Response) => {
 export const getAppointmentsByPatientId = async (req: Request, res: Response) => {
   try {
     const { patientId } = req.params;
+    console.log('getAppointmentsByPatientId called with patientId:', patientId);
     
     // Validate patientId is a number
     if (isNaN(Number(patientId))) {
@@ -429,6 +430,7 @@ export const getAppointmentsByPatientId = async (req: Request, res: Response) =>
       if (appointment && appointment.time) {
         appointment.appointment_time = appointment.time.split('T')[1]?.substring(0, 5) || appointment.time;
       }
+      console.log('appointment:', appointment);
       return appointment;
     });
     

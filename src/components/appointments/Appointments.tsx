@@ -18,7 +18,14 @@ import {
   AlertColor,
   DialogContentText,
   DialogActions,
-  DialogContent
+  DialogContent,
+  TextField,
+  InputAdornment,
+  Select,
+  MenuItem,
+  Paper,
+  FormControl,
+  InputLabel
 } from '@mui/material';
 import { 
   Add as AddIcon, 
@@ -27,12 +34,20 @@ import {
   Event as EventIcon,
   Person as PersonIcon,
   AccessTime as TimeIcon,
-  Notes as NotesIcon
+  Notes as NotesIcon,
+  Search as SearchIcon,
+  FilterAlt as FilterIcon
 } from '@mui/icons-material';
+import { DatePicker } from '@mui/x-date-pickers';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { it } from 'date-fns/locale';
 import axios from 'axios';
 import AppointmentForm from './AppointmentForm';
 import { styled } from '@mui/material/styles';
 import Sidebar from '../common/Sidebar';
+import { TableRow, TableCell } from '@mui/material';
+import { formatDate, translateStatus } from '../../utils';
 
 const SidebarItem = styled(Box)(({ theme }) => ({
     display: 'flex',
@@ -67,6 +82,14 @@ interface Appointment {
   last_name?: string; // Aggiunto per supportare i dati dell'utente
 }
 
+// Interfaccia per i filtri
+interface FilterOptions {
+  patientName: string;
+  startDate: Date | null;
+  endDate: Date | null;
+  status: string;
+}
+
 // Interfaccia per le notifiche
 interface NotificationState {
   open: boolean;
@@ -76,6 +99,7 @@ interface NotificationState {
 
 const Appointments: React.FC = () => {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [filteredAppointments, setFilteredAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [openFormDialog, setOpenFormDialog] = useState(false);
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
@@ -85,12 +109,21 @@ const Appointments: React.FC = () => {
     message: '',
     severity: 'info'
   });
+  
+  // Stato per i filtri
+  const [filters, setFilters] = useState<FilterOptions>({
+    patientName: '',
+    startDate: null,
+    endDate: null,
+    status: 'all'
+  });
 
   const fetchAppointments = async () => {
     setLoading(true);
     try {
       const response = await axios.get('http://localhost:3001/api/appointments');
       setAppointments(response.data);
+      setFilteredAppointments(response.data); // Inizialmente mostra tutti gli appuntamenti
     } catch (error) {
       console.error('Error fetching appointments:', error);
       setNotification({
@@ -106,6 +139,66 @@ const Appointments: React.FC = () => {
   useEffect(() => {
     fetchAppointments();
   }, []);
+  
+  // Funzione per applicare i filtri
+  const applyFilters = () => {
+    let result = [...appointments];
+    
+    // Filtra per nome paziente
+    if (filters.patientName.trim() !== '') {
+      const searchTerm = filters.patientName.toLowerCase().trim();
+      result = result.filter(appointment => {
+        const fullName = `${appointment.first_name || ''} ${appointment.last_name || ''} ${appointment.patient_name || ''}`.toLowerCase();
+        return fullName.includes(searchTerm);
+      });
+    }
+    
+    // Filtra per data di inizio
+    if (filters.startDate) {
+      result = result.filter(appointment => {
+        const appointmentDate = new Date(appointment.appointment_date || appointment.date || '');
+        return appointmentDate >= filters.startDate!;
+      });
+    }
+    
+    // Filtra per data di fine
+    if (filters.endDate) {
+      result = result.filter(appointment => {
+        const appointmentDate = new Date(appointment.appointment_date || appointment.date || '');
+        return appointmentDate <= filters.endDate!;
+      });
+    }
+    
+    // Filtra per stato
+    if (filters.status !== 'all') {
+      result = result.filter(appointment => appointment.status === filters.status);
+    }
+    
+    setFilteredAppointments(result);
+  };
+  
+  // Applica i filtri quando cambiano
+  useEffect(() => {
+    applyFilters();
+  }, [filters, appointments]);
+  
+  // Gestione del cambio dei filtri
+  const handleFilterChange = (field: keyof FilterOptions, value: any) => {
+    setFilters(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+  
+  // Funzione per resettare i filtri
+  const resetFilters = () => {
+    setFilters({
+      patientName: '',
+      startDate: null,
+      endDate: null,
+      status: 'all'
+    });
+  };
 
   const handleOpenFormDialog = (appointment: Appointment | null = null) => {
     // Se stiamo modificando un appuntamento esistente, ottieni i dettagli completi
@@ -292,12 +385,90 @@ const Appointments: React.FC = () => {
           </Button>
         </Box>
 
+        {/* Filtri */}
+        <Paper sx={{ p: 2, mb: 3, borderRadius: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+            <FilterIcon sx={{ mr: 1, color: 'primary.main' }} />
+            <Typography variant="h6" component="h2">
+              Filtra Appuntamenti
+            </Typography>
+          </Box>
+          
+          <Grid container spacing={2}>
+            <Grid item xs={12} sm={6} md={3}>
+              <TextField
+                fullWidth
+                label="Nome Paziente"
+                variant="outlined"
+                size="small"
+                value={filters.patientName}
+                onChange={(e) => handleFilterChange('patientName', e.target.value)}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon fontSize="small" />
+                    </InputAdornment>
+                  ),
+                }}
+              />
+            </Grid>
+            
+            <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={it}>
+              <Grid item xs={12} sm={6} md={3}>
+                <DatePicker
+                  label="Data Inizio"
+                  value={filters.startDate}
+                  onChange={(date) => handleFilterChange('startDate', date)}
+                  slotProps={{ textField: { size: 'small', fullWidth: true } }}
+                />
+              </Grid>
+              
+              <Grid item xs={12} sm={6} md={3}>
+                <DatePicker
+                  label="Data Fine"
+                  value={filters.endDate}
+                  onChange={(date) => handleFilterChange('endDate', date)}
+                  slotProps={{ textField: { size: 'small', fullWidth: true } }}
+                />
+              </Grid>
+            </LocalizationProvider>
+            
+            <Grid item xs={12} sm={6} md={3}>
+              <FormControl fullWidth size="small">
+                <InputLabel id="status-filter-label">Stato</InputLabel>
+                <Select
+                  labelId="status-filter-label"
+                  id="status-filter"
+                  value={filters.status}
+                  label="Stato"
+                  onChange={(e) => handleFilterChange('status', e.target.value)}
+                >
+                  <MenuItem value="all">Tutti</MenuItem>
+                  <MenuItem value="scheduled">Programmati</MenuItem>
+                  <MenuItem value="completed">Completati</MenuItem>
+                  <MenuItem value="cancelled">Cancellati</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            
+            <Grid item xs={12} display="flex" justifyContent="flex-end">
+              <Button 
+                variant="outlined" 
+                onClick={resetFilters}
+                sx={{ mr: 1 }}
+              >
+                Reimposta Filtri
+              </Button>
+            </Grid>
+          </Grid>
+        </Paper>
+
         {/* Resto del contenuto... */}
         {loading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
             <CircularProgress />
           </Box>
-        ) : appointments.length === 0 ? (
+        ) : filteredAppointments.length === 0 ? (
           <Box sx={{ 
             display: 'flex', 
             flexDirection: 'column', 
@@ -326,7 +497,7 @@ const Appointments: React.FC = () => {
           </Box>
         ) : (
           <Grid container spacing={3}>
-            {appointments.map((appointment) => (
+            {filteredAppointments.map((appointment) => (
               <Grid item xs={12} sm={6} md={4} key={appointment.id}>
                 <Card 
                   sx={{ 

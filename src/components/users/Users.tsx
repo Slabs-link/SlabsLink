@@ -44,8 +44,7 @@ import {
   MedicalServices as MedicalServicesIcon,
   HealthAndSafety as HealthAndSafetyIcon,
   Medication as MedicationIcon,
-  Note as NoteIcon,
-  CalendarToday as CalendarTodayIcon
+  Note as NoteIcon
 } from '@mui/icons-material';
 import axios from 'axios';
 import { format } from 'date-fns';
@@ -169,11 +168,7 @@ const Users = () => {
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'info' });
   // State for the tab panel
   const [tabValue, setTabValue] = useState(0);
-  // State for user appointments
-  const [userAppointments, setUserAppointments] = useState<any[]>([]);
-  // State for appointment details dialog
-  const [openAppointmentDialog, setOpenAppointmentDialog] = useState(false);
-  const [selectedAppointment, setSelectedAppointment] = useState<any | null>(null);
+  // Rimosso stato per gli appuntamenti utente
 
   useEffect(() => {
     fetchUsers();
@@ -210,39 +205,6 @@ const Users = () => {
     setSelectedUser(user);
     setOpenViewDialog(true);
     setTabValue(0); // Reset to first tab
-    
-    // Fetch user appointments from the API
-    try {
-      // Fetch appointments for this user from the API
-      const response = await axios.get(`${API_BASE_URL}/appointments/patient/${user.id}`);
-      
-      if (response.data && Array.isArray(response.data)) {
-        // Map the API response to the expected format
-        const formattedAppointments = response.data.map((appointment: any) => ({
-          id: appointment.id,
-          date: appointment.appointment_date || appointment.date,
-          time: appointment.appointment_time || appointment.time,
-          notes: appointment.notes || '',
-          title: appointment.title || '',
-          status: appointment.status || 'scheduled'
-        }));
-        setUserAppointments(formattedAppointments);
-      } else {
-        // If no appointments or invalid response, show empty list
-        setUserAppointments([]);
-      }
-    } catch (error) {
-      console.error('Error fetching user appointments:', error);
-      // Fallback to mock data in case of error
-      setUserAppointments(MOCK_APPOINTMENTS);
-      
-      // Show notification about offline mode
-      setNotification({
-        open: true,
-        message: 'Impossibile recuperare gli appuntamenti dal server, visualizzazione in modalità offline',
-        severity: 'warning'
-      });
-    }
   };
   
   const handleCloseViewDialog = () => {
@@ -252,16 +214,6 @@ const Users = () => {
   
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
-  };
-  
-  const handleViewAppointmentDetails = (appointment: any) => {
-    setSelectedAppointment(appointment);
-    setOpenAppointmentDialog(true);
-  };
-  
-  const handleCloseAppointmentDialog = () => {
-    setOpenAppointmentDialog(false);
-    setSelectedAppointment(null);
   };
 
   const handleSaveUser = async (userData: Partial<User>) => {
@@ -560,8 +512,7 @@ const Users = () => {
                 <Grid item xs={12} md={8}>
                   <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
                     <Tabs value={tabValue} onChange={handleTabChange} aria-label="user details tabs">
-                      <Tab label="Informazioni Mediche" id="user-tab-0" aria-controls="user-tabpanel-0" />
-                      <Tab label="Appuntamenti" id="user-tab-1" aria-controls="user-tabpanel-1" />
+                      <Tab label="Informazioni" id="user-tab-0" aria-controls="user-tabpanel-0" />
                     </Tabs>
                   </Box>
                   
@@ -618,96 +569,7 @@ const Users = () => {
                     </Grid>
                   </TabPanel>
                   
-                  {/* Appointments Tab */}
-                  <TabPanel value={tabValue} index={1}>
-                    <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-                        <CalendarTodayIcon sx={{ mr: 1, verticalAlign: 'middle', color: 'primary.main' }} />
-                        Appuntamenti
-                      </Typography>
-                      
-                      {/* Filtro per stato appuntamenti - da implementare */}
-                      <FormControl size="small" sx={{ minWidth: 150 }}>
-                        <InputLabel id="appointment-status-filter-label">Filtra per stato</InputLabel>
-                        <Select
-                          labelId="appointment-status-filter-label"
-                          id="appointment-status-filter"
-                          label="Filtra per stato"
-                          defaultValue="all"
-                          // onChange={handleFilterChange} - da implementare
-                        >
-                          <MenuItem value="all">Tutti</MenuItem>
-                          <MenuItem value="scheduled">Programmati</MenuItem>
-                          <MenuItem value="completed">Completati</MenuItem>
-                          <MenuItem value="cancelled">Cancellati</MenuItem>
-                        </Select>
-                      </FormControl>
-                    </Box>
-                    
-                    {userAppointments.length > 0 ? (
-                      <TableContainer component={Paper} variant="outlined">
-                        <Table size="small">
-                          <TableHead sx={{ bgcolor: '#f5f5f5' }}>
-                            <TableRow>
-                              <TableCell>Data</TableCell>
-                              <TableCell>Ora</TableCell>
-                              <TableCell>Titolo</TableCell>
-                              <TableCell>Note</TableCell>
-                              <TableCell>Stato</TableCell>
-                              <TableCell align="center">Azioni</TableCell>
-                            </TableRow>
-                          </TableHead>
-                          <TableBody>
-                            {userAppointments.map((appointment) => (
-                              <TableRow key={appointment.id}>
-                                <TableCell>
-                                  {format(new Date(appointment.date), 'dd/MM/yyyy', { locale: it })}
-                                </TableCell>
-                                <TableCell>{appointment.time}</TableCell>
-                                <TableCell>{appointment.title || '-'}</TableCell>
-                                <TableCell>{appointment.notes || '-'}</TableCell>
-                                <TableCell>
-                                  <Box
-                                    sx={{
-                                      display: 'inline-block',
-                                      px: 1,
-                                      py: 0.5,
-                                      borderRadius: 1,
-                                      bgcolor: appointment.status === 'completed' ? '#e8f5e9' : 
-                                               appointment.status === 'scheduled' ? '#e3f2fd' : '#fff3e0',
-                                      color: appointment.status === 'completed' ? '#2e7d32' : 
-                                             appointment.status === 'scheduled' ? '#1565c0' : '#e65100',
-                                      fontSize: '0.75rem',
-                                      fontWeight: 'bold'
-                                    }}
-                                  >
-                                    {appointment.status === 'completed' ? 'Completato' : 
-                                     appointment.status === 'scheduled' ? 'Programmato' : 'Cancellato'}
-                                  </Box>
-                                </TableCell>
-                                <TableCell align="center">
-                                  <IconButton 
-                                    size="small" 
-                                    color="primary" 
-                                    title="Visualizza dettagli"
-                                    onClick={() => handleViewAppointmentDetails(appointment)}
-                                  >
-                                    <VisibilityIcon fontSize="small" />
-                                  </IconButton>
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </TableContainer>
-                    ) : (
-                      <Paper variant="outlined" sx={{ p: 3, textAlign: 'center' }}>
-                        <Typography variant="body1" color="text.secondary">
-                          Nessun appuntamento trovato per questo utente
-                        </Typography>
-                      </Paper>
-                    )}
-                  </TabPanel>
+                  {/* La scheda Appuntamenti è stata rimossa */}
                 </Grid>
               </Grid>
             )}
@@ -719,96 +581,7 @@ const Users = () => {
           </DialogActions>
         </Dialog>
 
-        {/* Appointment Details Dialog */}
-        <Dialog 
-          open={openAppointmentDialog} 
-          onClose={handleCloseAppointmentDialog}
-          maxWidth="md"
-          fullWidth
-        >
-          <DialogTitle>
-            <Typography variant="h6" fontWeight="bold">Dettagli Appuntamento</Typography>
-          </DialogTitle>
-          <DialogContent dividers>
-            {selectedAppointment && (
-              <Grid container spacing={3}>
-                <Grid item xs={12} md={6}>
-                  <Box sx={{ mb: 2 }}>
-                    <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-                      <CalendarTodayIcon sx={{ mr: 1, verticalAlign: 'middle', color: 'primary.main' }} />
-                      Data e Ora
-                    </Typography>
-                    <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
-                      <Typography variant="body1">
-                        {format(new Date(selectedAppointment.date), 'dd MMMM yyyy', { locale: it })}
-                      </Typography>
-                      <Typography variant="body1">
-                        Ora: {selectedAppointment.time}
-                      </Typography>
-                      {selectedAppointment.duration && (
-                        <Typography variant="body1">
-                          Durata: {selectedAppointment.duration} minuti
-                        </Typography>
-                      )}
-                    </Paper>
-                  </Box>
-                </Grid>
-                
-                <Grid item xs={12} md={6}>
-                  <Box sx={{ mb: 2 }}>
-                    <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-                      <MedicalServicesIcon sx={{ mr: 1, verticalAlign: 'middle', color: 'primary.main' }} />
-                      Informazioni Appuntamento
-                    </Typography>
-                    <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
-                      <Typography variant="body1" fontWeight="bold">
-                        {selectedAppointment.title || 'Appuntamento'}
-                      </Typography>
-                      <Box sx={{ mt: 1, display: 'flex', alignItems: 'center' }}>
-                        <Box
-                          sx={{
-                            display: 'inline-block',
-                            px: 1,
-                            py: 0.5,
-                            borderRadius: 1,
-                            bgcolor: selectedAppointment.status === 'completed' ? '#e8f5e9' : 
-                                    selectedAppointment.status === 'scheduled' ? '#e3f2fd' : '#fff3e0',
-                            color: selectedAppointment.status === 'completed' ? '#2e7d32' : 
-                                  selectedAppointment.status === 'scheduled' ? '#1565c0' : '#e65100',
-                            fontSize: '0.75rem',
-                            fontWeight: 'bold'
-                          }}
-                        >
-                          {selectedAppointment.status === 'completed' ? 'Completato' : 
-                          selectedAppointment.status === 'scheduled' ? 'Programmato' : 'Cancellato'}
-                        </Box>
-                      </Box>
-                    </Paper>
-                  </Box>
-                </Grid>
-                
-                <Grid item xs={12}>
-                  <Box sx={{ mb: 2 }}>
-                    <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-                      <NoteIcon sx={{ mr: 1, verticalAlign: 'middle', color: 'primary.main' }} />
-                      Note
-                    </Typography>
-                    <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
-                      <Typography variant="body1">
-                        {selectedAppointment.notes || 'Nessuna nota disponibile'}
-                      </Typography>
-                    </Paper>
-                  </Box>
-                </Grid>
-              </Grid>
-            )}
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={handleCloseAppointmentDialog} color="primary">
-              Chiudi
-            </Button>
-          </DialogActions>
-        </Dialog>
+        {/* Il dialog per i dettagli degli appuntamenti è stato rimosso */}
         
         {/* Add notification component */}
         <Snackbar 
