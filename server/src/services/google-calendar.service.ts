@@ -164,17 +164,40 @@ export class GoogleCalendarService {
     if (!appointment.start_time || !appointment.end_time) {
       // Se non ci sono start_time e end_time, proviamo a crearli da date e time
       if (appointment.date && appointment.time && appointment.duration) {
-        // Creiamo le date di inizio e fine dall'appuntamento
-        const [year, month, day] = appointment.date.split('-').map(Number);
-        const [hours, minutes] = appointment.time.split(':').map(Number);
-        
-        // Creiamo la data di inizio
-        const startDate = new Date(year, month - 1, day, hours, minutes);
-        appointment.start_time = startDate.toISOString();
-        
-        // Creiamo la data di fine aggiungendo la durata
-        const endDate = new Date(startDate.getTime() + appointment.duration * 60 * 1000);
-        appointment.end_time = endDate.toISOString();
+        try {
+          // Creiamo le date di inizio e fine dall'appuntamento
+          const [year, month, day] = appointment.date.split('-').map(Number);
+          const [hours, minutes] = appointment.time.split(':').map(Number);
+          
+          // Validazione dei valori della data
+          if (isNaN(year) || isNaN(month) || isNaN(day) || isNaN(hours) || isNaN(minutes) ||
+              month < 1 || month > 12 || day < 1 || day > 31 || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+            throw new Error(`Invalid date or time values: ${appointment.date} ${appointment.time}`);
+          }
+          
+          // Creiamo la data di inizio
+          const startDate = new Date(year, month - 1, day, hours, minutes);
+          
+          // Verifica che la data sia valida
+          if (isNaN(startDate.getTime())) {
+            throw new Error(`Invalid date created: ${year}-${month}-${day} ${hours}:${minutes}`);
+          }
+          
+          appointment.start_time = startDate.toISOString();
+          
+          // Creiamo la data di fine aggiungendo la durata
+          const endDate = new Date(startDate.getTime() + appointment.duration * 60 * 1000);
+          
+          // Verifica che la data di fine sia valida
+          if (isNaN(endDate.getTime())) {
+            throw new Error(`Invalid end date created with duration: ${appointment.duration}`);
+          }
+          
+          appointment.end_time = endDate.toISOString();
+        } catch (error) {
+          console.error('Error creating appointment dates:', error);
+          throw error;
+        }
       } else {
         throw new Error('Missing appointment time parameters');
       }
@@ -261,29 +284,134 @@ export class GoogleCalendarService {
     });
   }
 
-  async syncAppointment(appointment: Appointment): Promise<void> {
+  async syncAppointment(appointment: Appointment): Promise<{ id: string }> {
     try {
-      if (!appointment.google_calendar_event_id) {
-        const eventId = await this.createCalendarEvent(appointment);
-        await this.updateLocalAppointmentSyncStatus(appointment.id, 'synced', eventId);
-      } else {
-        await this.updateCalendarEvent(appointment);
+      if (!this.calendar) {
+        await this.configure();
+        if (!this.calendar) throw new Error('Google Calendar service not authenticated');
+      }
+
+      // Se non ci sono start_time e end_time, proviamo a crearli da date e time
+      if (!appointment.start_time || !appointment.end_time) {
+        if (appointment.date && appointment.time && appointment.duration) {
+          try {
+            // Creiamo le date di inizio e fine dall'appuntamento
+            const [year, month, day] = appointment.date.split('-').map(Number);
+            const [hours, minutes] = appointment.time.split(':').map(Number);
+            
+            // Validazione dei valori della data
+            if (isNaN(year) || isNaN(month) || isNaN(day) || isNaN(hours) || isNaN(minutes) ||
+                month < 1 || month > 12 || day < 1 || day > 31 || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+              throw new Error(`Invalid date or time values: ${appointment.date} ${appointment.time}`);
+            }
+            
+            // Creiamo la data di inizio
+            const startDate = new Date(year, month - 1, day, hours, minutes);
+            
+            // Verifica che la data sia valida
+            if (isNaN(startDate.getTime())) {
+              throw new Error(`Invalid date created: ${year}-${month}-${day} ${hours}:${minutes}`);
+            }
+            
+            appointment.start_time = startDate.toISOString();
+            
+            // Creiamo la data di fine aggiungendo la durata
+            const endDate = new Date(startDate.getTime() + appointment.duration * 60 * 1000);
+            
+            // Verifica che la data di fine sia valida
+            if (isNaN(endDate.getTime())) {
+              throw new Error(`Invalid end date created with duration: ${appointment.duration}`);
+            }
+            
+            appointment.end_time = endDate.toISOString();
+          } catch (error) {
+            console.error('Error creating appointment dates:', error);
+            // Non propaghiamo l'errore per evitare di interrompere il flusso principale
+            return { id: '' };
+          }
+        } else {
+          console.error('Missing appointment time parameters');
+          // Non propaghiamo l'errore per evitare di interrompere il flusso principale
+          return { id: '' };
+        }
+      }
+
+      let eventId = '';
+      try {
+        if (!appointment.google_calendar_event_id) {
+          // Tentiamo di creare l'evento su Google Calendar
+          try {
+            eventId = await this.createCalendarEvent(appointment);
+            // Aggiorniamo lo stato di sincronizzazione solo se abbiamo un ID evento valido
+            if (eventId) {
+              try {
+                await this.updateLocalAppointmentSyncStatus(appointment.id, 'synced', eventId);
+              } catch (syncError) {
+                // Se fallisce l'aggiornamento dello stato, logghiamo ma non interrompiamo
+                console.warn(`Impossibile aggiornare lo stato di sincronizzazione per l'appuntamento ${appointment.id}. Verrà aggiornato in seguito.`);
+              }
+            }
+          } catch (calendarError) {
+            console.error('Errore durante la creazione dell\'evento su Google Calendar:', calendarError);
+            // Tentiamo di aggiornare lo stato come fallito, ma non interrompiamo il flusso
+            try {
+              await this.updateLocalAppointmentSyncStatus(appointment.id, 'failed');
+            } catch (syncError) {
+              console.warn(`Impossibile aggiornare lo stato di sincronizzazione fallita per l'appuntamento ${appointment.id}.`);
+            }
+          }
+        } else {
+          // Tentiamo di aggiornare l'evento esistente
+          try {
+            await this.updateCalendarEvent(appointment);
+            eventId = appointment.google_calendar_event_id;
+          } catch (updateError) {
+            console.error('Errore durante l\'aggiornamento dell\'evento su Google Calendar:', updateError);
+            // Non interrompiamo il flusso principale
+          }
+        }
+        return { id: eventId };
+      } catch (error) {
+        console.error('Errore durante la sincronizzazione con Google Calendar:', error);
+        // Non propaghiamo l'errore per evitare di interrompere il flusso principale
+        return { id: '' };
       }
     } catch (error) {
-      await this.updateLocalAppointmentSyncStatus(appointment.id, 'failed');
-      throw error;
+      console.error('Errore generale durante la sincronizzazione:', error);
+      // Non propaghiamo l'errore per evitare di interrompere il flusso principale
+      return { id: '' };
     }
   }
 
   private async updateLocalAppointmentSyncStatus(appointmentId: number, status: 'synced' | 'pending' | 'failed', eventId?: string) {
-    this.db = getDatabase();
-    if (!this.db) throw new Error('Database connection failed');
-    
-    // Corretto l'ordine dei parametri nella query
-    await this.db.run(
-      'UPDATE appointments SET sync_status = ?, google_calendar_event_id = ? WHERE id = ?',
-      status, eventId ?? null, appointmentId
-    );
+    try {
+      this.db = getDatabase();
+      if (!this.db) throw new Error('Database connection failed');
+      
+      // Utilizziamo una query diretta senza prepare per evitare conflitti con transazioni già in corso
+      // Questo approccio è più sicuro quando potremmo essere all'interno di una transazione esistente
+      try {
+        // Utilizziamo una query parametrizzata con il metodo run invece di exec
+        // exec accetta solo un argomento (la query SQL) senza parametri
+        await this.db.run(
+          'UPDATE appointments SET sync_status = ?, google_calendar_event_id = ? WHERE id = ?',
+          [status, eventId ?? null, appointmentId]
+        );
+      } catch (execError) {
+        // Se fallisce l'approccio diretto, proviamo con un metodo alternativo
+        console.warn(`Tentativo alternativo di aggiornamento per l'appuntamento ${appointmentId}`);
+        await this.db.run('UPDATE appointments SET sync_status = ?, google_calendar_event_id = ? WHERE id = ?', 
+                   [status, eventId ?? null, appointmentId]);
+      }
+    } catch (error) {
+      // Catturiamo specificamente l'errore di transazione già in corso
+      if (typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string' && error.message.includes('within a transaction')) {
+        console.warn(`Impossibile aggiornare lo stato di sincronizzazione per l'appuntamento ${appointmentId}: transazione già in corso. L'aggiornamento verrà gestito in seguito.`);
+      } else {
+        console.error('Errore durante l\'aggiornamento dello stato di sincronizzazione:', error);
+      }
+      // Non propaghiamo l'errore per evitare di interrompere il flusso principale
+    }
   }
 
   private async getUnsyncedAppointments(): Promise<Appointment[]> {

@@ -45,7 +45,9 @@ export const runSqliteMigrations = async (): Promise<boolean> => {
         updated_at TEXT DEFAULT (datetime('now')),
         appointment_type_id INTEGER,
         google_calendar_event_id TEXT,
-        FOREIGN KEY (patient) REFERENCES users(id)
+        start_time TEXT,
+        end_time TEXT,
+        FOREIGN KEY (patient_id) REFERENCES users(id)
       )
     `).run();
     

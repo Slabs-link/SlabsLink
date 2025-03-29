@@ -42,6 +42,11 @@ export function getDatabase(): BetterSqlite3.Database {
   return DatabaseManager.getInstance();
 }
 
+// Function to close the database connection
+export function closeDatabase(): void {
+  DatabaseManager.closeConnection();
+}
+
 // Function to check database connection
 export function checkDatabaseConnection(): boolean {
   try {

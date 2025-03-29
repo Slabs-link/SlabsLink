@@ -38,12 +38,16 @@ interface AppointmentFormData {
   title: string;
   appointment_type_id: number | null;
   patient_id: number | null;
-  date: Date | null;
-  time: Date | null;
+  date: Date | string | null;
+  time: Date | string | null;
   duration: number;
   notes: string;
   status: 'scheduled' | 'completed' | 'cancelled';
 }
+
+// Helper types for the date and time pickers
+type DatePickerValue = Date | null;
+type TimePickerValue = Date | null;
 
 interface AppointmentFormProps {
   appointment?: any;
@@ -198,6 +202,7 @@ const AppointmentForm: React.FC<AppointmentFormProps> = ({ appointment, onSave, 
     }
   };
 
+  // Funzioni per gestire i cambiamenti di data e ora
   const handleDateChange = (date: Date | null) => {
     setFormData(prev => ({ ...prev, date }));
     
@@ -222,6 +227,19 @@ const AppointmentForm: React.FC<AppointmentFormProps> = ({ appointment, onSave, 
         return newErrors;
       });
     }
+  };
+
+  // Funzioni helper per convertire i valori di data e ora per i componenti DatePicker e TimePicker
+  const getDatePickerValue = (date: Date | string | null): DatePickerValue => {
+    if (!date) return null;
+    return date instanceof Date ? date : new Date(date);
+  };
+
+  const getTimePickerValue = (time: Date | string | null): TimePickerValue => {
+    if (!time) return null;
+    if (time instanceof Date) return time;
+    // Se è una stringa (formato HH:MM), crea un oggetto Date
+    return new Date(`2000-01-01T${time}`);
   };
 
   const validateForm = () => {
@@ -254,13 +272,27 @@ const AppointmentForm: React.FC<AppointmentFormProps> = ({ appointment, onSave, 
   const handleSubmit = () => {
     if (validateForm()) {
       // Format the data for API submission
-      const timeString = formData.time ? 
-        `${formData.time.getHours().toString().padStart(2, '0')}:${formData.time.getMinutes().toString().padStart(2, '0')}` : 
-        '';
+      let timeString = '';
+      if (formData.time) {
+        // Check if time is a Date object before calling Date methods
+        if (formData.time instanceof Date) {
+          timeString = `${formData.time.getHours().toString().padStart(2, '0')}:${formData.time.getMinutes().toString().padStart(2, '0')}`;
+        } else if (typeof formData.time === 'string') {
+          // If it's already a string, use it directly
+          timeString = formData.time;
+        }
+      }
       
-      const dateString = formData.date ? 
-        `${formData.date.getFullYear()}-${(formData.date.getMonth() + 1).toString().padStart(2, '0')}-${formData.date.getDate().toString().padStart(2, '0')}` : 
-        '';
+      let dateString = '';
+      if (formData.date) {
+        // Check if date is a Date object before calling Date methods
+        if (formData.date instanceof Date) {
+          dateString = `${formData.date.getFullYear()}-${(formData.date.getMonth() + 1).toString().padStart(2, '0')}-${formData.date.getDate().toString().padStart(2, '0')}`;
+        } else if (typeof formData.date === 'string') {
+          // If it's already a string, use it directly
+          dateString = formData.date;
+        }
+      }
       
       // Assicurati che il titolo sia impostato in base al tipo di appuntamento selezionato
       const selectedType = appointmentTypes.find(type => type.id === formData.appointment_type_id);
@@ -269,8 +301,8 @@ const AppointmentForm: React.FC<AppointmentFormProps> = ({ appointment, onSave, 
       const appointmentData = {
         ...formData,
         title,
-        appointment_date: dateString,
-        appointment_time: timeString
+        date: dateString,
+        time: timeString
       };
       
       onSave(appointmentData);
@@ -354,10 +386,11 @@ const AppointmentForm: React.FC<AppointmentFormProps> = ({ appointment, onSave, 
                 />
               </Grid>
               
+              
               <Grid item xs={12} sm={6}>
                 <DatePicker
                   label="Data"
-                  value={formData.date}
+                  value={getDatePickerValue(formData.date)}
                   onChange={handleDateChange}
                   slotProps={{
                     textField: {
@@ -373,7 +406,7 @@ const AppointmentForm: React.FC<AppointmentFormProps> = ({ appointment, onSave, 
               <Grid item xs={12} sm={6}>
                 <TimePicker
                   label="Ora"
-                  value={formData.time}
+                  value={getTimePickerValue(formData.time)}
                   onChange={handleTimeChange}
                   slotProps={{
                     textField: {

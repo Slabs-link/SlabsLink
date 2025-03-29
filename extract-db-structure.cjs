@@ -107,8 +107,26 @@ function extractDatabaseStructure(dbPath) {
           const notNull = col.notnull ? 'NOT NULL' : 'NULL';
           const defaultValue = col.dflt_value ? `DEFAULT ${col.dflt_value}` : '';
           const primaryKey = col.pk ? 'PRIMARY KEY' : '';
-          console.log(`  ${col.name} (${col.type}) ${notNull} ${defaultValue} ${primaryKey}`.trim());
+          
+          // Evidenzia i campi importanti per Google Calendar nella tabella appointments
+          let highlight = '';
+          if (table.name === 'appointments' && 
+              ['google_calendar_event_id', 'synced', 'start_time', 'end_time', 'appointment_type_id'].includes(col.name)) {
+            highlight = ' [IMPORTANTE PER GOOGLE CALENDAR]';
+          }
+          
+          console.log(`  ${col.name} (${col.type}) ${notNull} ${defaultValue} ${primaryKey}${highlight}`.trim());
         });
+        
+        // Se è la tabella appointments, mostra un messaggio informativo sui campi per Google Calendar
+        if (table.name === 'appointments') {
+          console.log('\nCampi per Google Calendar:');
+          console.log('  google_calendar_event_id: ID dell\'evento in Google Calendar');
+          console.log('  synced: Stato di sincronizzazione con Google Calendar (0=non sincronizzato, 1=sincronizzato)');
+          console.log('  start_time: Data e ora di inizio in formato ISO');
+          console.log('  end_time: Data e ora di fine in formato ISO');
+          console.log('  appointment_type_id: Riferimento al tipo di appuntamento');
+        }
         
         // Ottieni informazioni sugli indici
         console.log('\nIndici:');
