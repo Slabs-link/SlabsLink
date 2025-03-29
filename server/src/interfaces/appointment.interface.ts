@@ -17,6 +17,9 @@ export interface Appointment {
   title?: string;
   appointment_date?: string;
   appointment_time?: string;
+  // Alias per compatibilità con il codice esistente
+  date?: string;
+  time?: string;
   duration?: number;
   first_name?: string;
   last_name?: string;

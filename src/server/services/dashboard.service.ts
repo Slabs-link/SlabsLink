@@ -1,21 +1,27 @@
-import { getDatabase } from '../config/database-sqlite';
+import sqlite3 from 'sqlite3';
+import { Database } from 'sqlite3';
 
 export const getDashboardData = async () => {
   try {
-    const db = getDatabase();
-    const prepareStatement = (sql: string) => db.prepare(sql);
+    // Utilizza il pool di connessioni esistente
+const pool = require('../../database/db');
+
+const promisifiedDb = {
+  get: (sql: string, params?: any[]) => pool.get(sql, params),
+  all: (sql: string, params?: any[]) => pool.all(sql, params)
+};
 
     const [appointments, patients, users] = await Promise.all([
-      prepareStatement('SELECT COUNT(*) as total FROM appointments').get(),
-      prepareStatement('SELECT COUNT(*) as total FROM patients').get(),
-      prepareStatement('SELECT COUNT(*) as total FROM users').get()
+      promisifiedDb.get('SELECT COUNT(*) as total FROM appointments'),
+      promisifiedDb.get('SELECT COUNT(*) as total FROM patients'),
+      promisifiedDb.get('SELECT COUNT(*) as total FROM users')
     ]);
 
     return {
-      appointments: (appointments as any).total,
-      patients: (patients as any).total,
-      users: (users as any).total,
-      latestAppointments: await prepareStatement('SELECT * FROM appointments ORDER BY date DESC LIMIT 5').all()
+      appointments: appointments.total,
+      patients: patients.total,
+      users: users.total,
+      latestAppointments: await promisifiedDb.all('SELECT * FROM appointments ORDER BY date DESC LIMIT 5')
     };
   } catch (error) {
     console.error('Database error:', error);

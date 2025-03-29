@@ -18,7 +18,8 @@ const logMessage = (message: string) => {
  */
 export const getAuthUrl = async (req: Request, res: Response) => {
   try {
-    logMessage('Generating Google Calendar auth URL');
+    logMessage('Generating Google Calendar auth URL : ' + req.path
+    );
     
     const { clientId, clientSecret, redirectUri } = req.query;
     
@@ -43,8 +44,15 @@ export const getAuthUrl = async (req: Request, res: Response) => {
       scope: scopes,
     });
     
-    // Reindirizza l'utente all'URL di autenticazione di Google
-    res.redirect(authUrl);
+    // Controlla se la richiesta è per /auth-url o /auth
+    const path = req.path;
+    if (path.endsWith('/auth-url')) {
+      // Restituisci l'URL come JSON
+      return res.json({ authUrl });
+    } else {
+      // Reindirizza l'utente all'URL di autenticazione di Google
+      return res.redirect(authUrl);
+    }
   } catch (error) {
     logMessage(`Error generating auth URL: ${error instanceof Error ? error.message : 'Unknown error'}`);
     res.status(500).json({ 
@@ -201,11 +209,10 @@ export const syncAppointments = async (req: Request, res: Response) => {
   try {
     logMessage('Syncing appointments with Google Calendar');
     
-    // Implementazione da completare
-    // Questa funzione dovrebbe utilizzare il servizio GoogleCalendarService per sincronizzare gli appuntamenti
-    
+    const appointments = await googleCalendarService.syncAppointments();
     res.json({
-      message: 'Funzionalità in fase di implementazione'
+      message: 'Appuntamenti sincronizzati con successo',
+      appointments
     });
   } catch (error) {
     logMessage(`Error syncing appointments: ${error instanceof Error ? error.message : 'Unknown error'}`);

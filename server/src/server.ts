@@ -8,6 +8,7 @@ import { initializeComuniTable } from './controllers/comuni-sqlite.controller';
 import { initializeDatabase } from './config/init-database';
 import { getDatabase } from './config/database-sqlite';
 import axios, { AxiosError } from 'axios';
+import { googleCalendarRoutes } from './routes/google-calendar.routes';
 
 // Create a fresh Express app
 const app = express();
@@ -285,11 +286,11 @@ app.post('/api/notifications', (req, res) => {
 // Import routes
 import licenseRoutes from './routes/license.routes';
 import settingsRoutes from './routes/settings.routes';
-import { googleCalendarRoutes } from './routes/google-calendar.routes';
 
 // Register routes
 app.use('/api/license', licenseRoutes);
 app.use('/api/settings', settingsRoutes);
+// Mount the Google Calendar routes
 app.use('/api/google-calendar', googleCalendarRoutes);
 // Manteniamo anche il vecchio percorso per retrocompatibilità
 app.use('/api/google', googleCalendarRoutes);

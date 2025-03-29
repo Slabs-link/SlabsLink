@@ -162,27 +162,52 @@ export class GoogleCalendarService {
     if (!this.calendar) throw new Error('Google Calendar service not authenticated');
 
     if (!appointment.start_time || !appointment.end_time) {
-      throw new Error('Missing appointment time parameters');
+      // Se non ci sono start_time e end_time, proviamo a crearli da date e time
+      if (appointment.date && appointment.time && appointment.duration) {
+        // Creiamo le date di inizio e fine dall'appuntamento
+        const [year, month, day] = appointment.date.split('-').map(Number);
+        const [hours, minutes] = appointment.time.split(':').map(Number);
+        
+        // Creiamo la data di inizio
+        const startDate = new Date(year, month - 1, day, hours, minutes);
+        appointment.start_time = startDate.toISOString();
+        
+        // Creiamo la data di fine aggiungendo la durata
+        const endDate = new Date(startDate.getTime() + appointment.duration * 60 * 1000);
+        appointment.end_time = endDate.toISOString();
+      } else {
+        throw new Error('Missing appointment time parameters');
+      }
+    }
+
+    // Otteniamo le impostazioni del calendario
+    const settings = await this.getCalendarSettings();
+    // Usiamo il calendario primario come default
+    let calendarId = 'primary';
+    
+    // Se nelle impostazioni è specificato un calendario specifico, lo usiamo
+    if (settings?.selectedCalendarId) {
+      calendarId = settings.selectedCalendarId;
     }
 
     const event: calendar_v3.Schema$Event = {
       summary: `Appuntamento: ${appointment.patient_name}`,
       description: appointment.notes,
       start: {
-        dateTime: new Date(appointment.start_time!).toISOString(),
-        timeZone: 'Europe/Rome'
+        dateTime: new Date(appointment.start_time).toISOString(),
+        timeZone: 'Europe/Rome',
       },
       end: {
-        dateTime: new Date(appointment.end_time!).toISOString(),
-        timeZone: 'Europe/Rome'
+        dateTime: new Date(appointment.end_time).toISOString(),
+        timeZone: 'Europe/Rome',
       }
     };
 
     const response = await this.calendar!.events.insert({
-      calendarId: 'primary',
+      calendarId: calendarId,
       requestBody: event
     });
-
+    
     return response.data.id || '';
   }
 
@@ -191,21 +216,46 @@ export class GoogleCalendarService {
       throw new Error('Servizio non autenticato o ID evento mancante');
     }
 
+    // Se non ci sono start_time e end_time, proviamo a crearli da date e time
+    if ((!appointment.start_time || !appointment.end_time) && appointment.date && appointment.time && appointment.duration) {
+      // Creiamo le date di inizio e fine dall'appuntamento
+      const [year, month, day] = appointment.date.split('-').map(Number);
+      const [hours, minutes] = appointment.time.split(':').map(Number);
+      
+      // Creiamo la data di inizio
+      const startDate = new Date(year, month - 1, day, hours, minutes);
+      appointment.start_time = startDate.toISOString();
+      
+      // Creiamo la data di fine aggiungendo la durata
+      const endDate = new Date(startDate.getTime() + appointment.duration * 60 * 1000);
+      appointment.end_time = endDate.toISOString();
+    }
+
+    // Otteniamo le impostazioni del calendario
+    const settings = await this.getCalendarSettings();
+    // Usiamo il calendario primario come default
+    let calendarId = 'primary';
+    
+    // Se nelle impostazioni è specificato un calendario specifico, lo usiamo
+    if (settings?.selectedCalendarId) {
+      calendarId = settings.selectedCalendarId;
+    }
+
     const event: calendar_v3.Schema$Event = {
       summary: `Appuntamento: ${appointment.patient_name}`,
       description: appointment.notes,
       start: {
         dateTime: new Date(appointment.start_time).toISOString(),
-        timeZone: 'Europe/Rome'
+        timeZone: 'Europe/Rome',
       },
       end: {
         dateTime: new Date(appointment.end_time).toISOString(),
-        timeZone: 'Europe/Rome'
+        timeZone: 'Europe/Rome',
       }
     };
 
     await this.calendar.events.update({
-      calendarId: 'primary',
+      calendarId: calendarId,
       eventId: appointment.google_calendar_event_id,
       requestBody: event
     });
@@ -228,22 +278,36 @@ export class GoogleCalendarService {
   private async updateLocalAppointmentSyncStatus(appointmentId: number, status: 'synced' | 'pending' | 'failed', eventId?: string) {
     this.db = getDatabase();
     if (!this.db) throw new Error('Database connection failed');
-    await (await this.db.prepare(
-      'UPDATE appointments SET sync_status = ?, google_calendar_event_id = ? WHERE id = ?'
-    )).run(appointmentId, status, eventId ?? null);
+    
+    // Corretto l'ordine dei parametri nella query
+    await this.db.run(
+      'UPDATE appointments SET sync_status = ?, google_calendar_event_id = ? WHERE id = ?',
+      status, eventId ?? null, appointmentId
+    );
   }
 
   private async getUnsyncedAppointments(): Promise<Appointment[]> {
-    return (await this.db?.prepare('SELECT * FROM appointments WHERE sync_status IS NULL'))?.all() || [];
+    this.db = getDatabase();
+    if (!this.db) throw new Error('Database connection failed');
+    
+    // Corretto il metodo di query
+    return await this.db.all('SELECT * FROM appointments WHERE sync_status IS NULL') || [];
   }
 
   private async markAppointmentSynced(appointmentId: number): Promise<void> {
-    await (await this.db?.prepare('UPDATE appointments SET sync_status = 1 WHERE id = ?')).run(appointmentId);
+    this.db = getDatabase();
+    if (!this.db) throw new Error('Database connection failed');
+    
+    // Corretto il metodo di query
+    await this.db.run('UPDATE appointments SET sync_status = ? WHERE id = ?', 'synced', appointmentId);
   }
 
   private async handleSyncError(appointmentId: number, error: any): Promise<void> {
-    await (await this.db?.prepare('UPDATE appointments SET sync_error = ? WHERE id = ?'))
-      .run(error.message, appointmentId);
+    this.db = getDatabase();
+    if (!this.db) throw new Error('Database connection failed');
+    
+    // Corretto il metodo di query
+    await this.db.run('UPDATE appointments SET sync_error = ? WHERE id = ?', error.message, appointmentId);
   }
 
   async handleEvent(resourceId: string): Promise<void> {
@@ -315,7 +379,7 @@ export class GoogleCalendarService {
   /**
    * Sincronizza gli appuntamenti con Google Calendar
    */
-  private async syncAppointments(): Promise<void> {
+  public async syncAppointments(): Promise<void> {
     if (!await this.isServiceEnabled()) return;
 
     const unsyncedAppointments = await this.getUnsyncedAppointments();
@@ -569,7 +633,7 @@ export class GoogleCalendarService {
   private async updateAppointmentFromEvent(appointmentId: number | undefined, event: calendar_v3.Schema$Event): Promise<void> {
     try {
       this.db = getDatabase();
-    if (!this.db) throw new Error('Database connection failed');
+      if (!this.db) throw new Error('Database connection failed');
       
       // Estrai il nome del paziente dal titolo dell'evento
       let patientName = 'Paziente senza nome';
@@ -591,7 +655,7 @@ export class GoogleCalendarService {
       const time = startDateTime.toTimeString().split(' ')[0].substring(0, 5);
       
       // Aggiorna l'appuntamento
-      (await this.db.prepare(`
+      const stmt = await this.db.prepare(`
         UPDATE appointments 
         SET patient_name = ?,
             date = ?,
@@ -599,7 +663,9 @@ export class GoogleCalendarService {
             notes = ?,
             synced = ?
         WHERE id = ?
-      `)).run(
+      `);
+      
+      await stmt.run(
         patientName,
         date,
         time,
@@ -617,7 +683,7 @@ export class GoogleCalendarService {
   /**
    * Processa un evento di Google Calendar ricevuto tramite webhook
    */
-  async processCalendarEvent(resourceState: string, resourceId: string, channelId: string): Promise<void> {
+  public async processCalendarEvent(resourceState: string, resourceId: string, channelId: string): Promise<void> {
     try {
       if (!this.calendar) {
         await this.configure();
@@ -628,7 +694,7 @@ export class GoogleCalendarService {
       }
       
       this.db = getDatabase();
-    if (!this.db) throw new Error('Database connection failed');
+      if (!this.db) throw new Error('Database connection failed');
       
       // Gestisci l'evento in base al tipo
       switch (resourceState) {
@@ -639,33 +705,16 @@ export class GoogleCalendarService {
           
         case 'exists':
           // Evento creato o modificato
-          // Ottieni i dettagli dell'evento
-          const event = await this.calendar.events.get({
-            calendarId: 'primary',
-            eventId: resourceId
-          });
-          
-          // Verifica se l'evento esiste già nel database
-          const existingAppointment = await this.db.get<Appointment | undefined>(
-            'SELECT * FROM appointments WHERE google_calendar_event_id = ?',
-            resourceId
-          );
-          
-          if (existingAppointment) {
-            // Aggiorna l'appuntamento esistente
-            this.updateAppointmentFromEvent(existingAppointment.id, event.data as calendar_v3.Schema$Event);
-          } else {
-            // Crea un nuovo appuntamento
-            this.createAppointmentFromEvent(event.data as calendar_v3.Schema$Event);
-          }
+          await this.handleEvent(resourceId);
           break;
           
         case 'not_exists':
           // Evento eliminato
           // Trova l'appuntamento associato all'evento
-          const appointmentToDelete = (await this.db.prepare(
-            'SELECT * FROM appointments WHERE google_calendar_event_id = ?'
-          )).get(resourceId) as unknown as Appointment | undefined;
+          const appointmentToDelete = await this.db.get(
+            'SELECT * FROM appointments WHERE google_calendar_event_id = ?',
+            resourceId
+          ) as Appointment | undefined;
           
           if (appointmentToDelete) {
             // Elimina l'appuntamento
@@ -681,4 +730,104 @@ export class GoogleCalendarService {
       console.error('Errore durante l\'elaborazione dell\'evento di Google Calendar:', error);
     }
   }
-}
+
+  /**
+   * Ottiene la lista dei calendari disponibili nell'account Google
+   */
+  async getAvailableCalendars(): Promise<Array<{id: string, summary: string}>> {
+    if (!this.calendar) {
+      await this.configure();
+    }
+    
+    if (!this.calendar) {
+      throw new Error('Google Calendar service non autenticato');
+    }
+
+    try {
+      const response = await this.calendar.calendarList.list();
+      const calendars = response.data.items || [];
+      
+      // Salva i calendari disponibili nelle impostazioni
+      this.db = getDatabase();
+      if (!this.db) throw new Error('Database connection failed');
+      
+      const setting = await this.db.get<AppSetting>(
+        'SELECT * FROM app_settings WHERE key = ?',
+        'calendar'
+      );
+      
+      if (setting) {
+        const calendarSettings = JSON.parse(setting.value);
+        calendarSettings.availableCalendars = calendars.map(cal => ({
+          id: cal.id || '',
+          summary: cal.summary || ''
+        }));
+        
+        await this.db.run(
+          'UPDATE app_settings SET value = ? WHERE key = ?',
+          JSON.stringify(calendarSettings),
+          'calendar'
+        );
+      }
+      
+      return calendars.map(cal => ({
+        id: cal.id || '',
+        summary: cal.summary || ''
+      }));
+    } catch (error) {
+      console.error('Errore durante il recupero dei calendari:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Imposta il calendario selezionato per la sincronizzazione
+   */
+  async setSelectedCalendar(calendarId: string): Promise<void> {
+    this.db = getDatabase();
+    if (!this.db) throw new Error('Database connection failed');
+    
+    const setting = await this.db.get<AppSetting>(
+      'SELECT * FROM app_settings WHERE key = ?',
+      'calendar'
+    );
+    
+    if (!setting) {
+      throw new Error('Impostazioni di Google Calendar non configurate');
+    }
+  
+    try {
+      // Verifica che il calendario esista
+      if (!this.calendar) {
+        await this.configure();
+      }
+      
+      if (!this.calendar) {
+        throw new Error('Google Calendar service non autenticato');
+      }
+      
+      // Verifica che il calendario esista
+      const response = await this.calendar.calendarList.get({
+        calendarId: calendarId
+      });
+      
+      if (!response.data) {
+        throw new Error('Calendario non trovato');
+      }
+      
+      // Aggiorna le impostazioni nel database
+      const calendarSettings = JSON.parse(setting.value);
+      calendarSettings.selectedCalendarId = calendarId;
+      
+      await this.db.run(
+        'UPDATE app_settings SET value = ? WHERE key = ?',
+        JSON.stringify(calendarSettings),
+        'calendar'
+      );
+      
+      console.log(`Calendario selezionato: ${response.data.summary} (${calendarId})`);
+    } catch (error) {
+      console.error('Errore durante la selezione del calendario:', error);
+      throw error;
+    }
+  }}

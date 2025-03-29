@@ -299,12 +299,24 @@ export const createAppointment = async (req: Request, res: Response) => {
     db.prepare('BEGIN TRANSACTION').run();
     
     try {
+      // Calcola le date di inizio e fine per Google Calendar
+      const [year, month, day] = date.split('-').map(Number);
+      const [hours, minutes] = time.split(':').map(Number);
+      
+      // Crea la data di inizio (assicurandosi che sia nel fuso orario locale)
+      const startDate = new Date(year, month - 1, day, hours, minutes);
+      const start_time = startDate.toISOString();
+      
+      // Crea la data di fine aggiungendo la durata
+      const endDate = new Date(startDate.getTime() + duration * 60 * 1000);
+      const end_time = endDate.toISOString();
+      
       // Insert appointment
       const insertStmt = db.prepare(`
         INSERT INTO appointments (
           title, patient_id, date, time, duration, notes, status, appointment_type_id,
-          synced, google_calendar_event_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          synced, google_calendar_event_id, start_time, end_time
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       
       // Se è stato selezionato un tipo di appuntamento, usa il suo nome come titolo
@@ -326,7 +338,9 @@ export const createAppointment = async (req: Request, res: Response) => {
         status,
         appointment_type_id || null,
         0, // non sincronizzato con Google Calendar
-        null // nessun ID evento Google Calendar associato
+        null, // nessun ID evento Google Calendar associato
+        start_time,
+        end_time
       );
       
       const appointmentId = result.lastInsertRowid;
@@ -380,6 +394,30 @@ export const createAppointment = async (req: Request, res: Response) => {
         LEFT JOIN appointment_types t ON a.appointment_type_id = t.id
         WHERE a.id = ?
       `).get(appointmentId);
+      
+      // Tenta di sincronizzare con Google Calendar se il servizio è configurato
+      try {
+        const calendarService = new GoogleCalendarService();
+        if (await calendarService.isServiceEnabled() && await calendarService.isServiceAuthenticated()) {
+          await calendarService.configure();
+          
+          // Prepara l'appuntamento per la sincronizzazione
+          const appointmentForSync = {
+            id: Number(appointmentId),
+            patient_name: `${(newAppointment as any).first_name} ${(newAppointment as any).last_name}`,
+            start_time,
+            end_time,
+            notes: notes || '',
+            google_calendar_event_id: null
+          };
+          
+          // Sincronizza con Google Calendar
+          await calendarService.syncAppointment(appointmentForSync);
+        }
+      } catch (syncError) {
+        console.error('Error syncing appointment with Google Calendar:', syncError);
+        // Non blocchiamo la creazione dell'appuntamento se la sincronizzazione fallisce
+      }
       
       return res.status(201).json(newAppointment);
     } catch (error) {

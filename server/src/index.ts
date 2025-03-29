@@ -53,6 +53,9 @@ app.use('/api/appointment-types', appointmentTypesRoutes);
 app.use('/api/settings', settingsRoutes);
 // Registro licenseRoutes separatamente
 app.use('/api/license', licenseRoutes);
+import { googleCalendarRoutes } from './routes/google-calendar.routes';
+// ... existing code ...
+app.use('/api/google-calendar', googleCalendarRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

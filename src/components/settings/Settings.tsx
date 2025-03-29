@@ -711,7 +711,7 @@ const Settings: React.FC = () => {
                     Per configurare l'integrazione con Google Calendar, segui questi passaggi:
                   </Typography>
                   
-                  <Typography variant="body1" component="div">
+                  <div>
                     <ol>
                       <li>
                         <strong>Crea un progetto nella Google Cloud Console:</strong>
@@ -771,7 +771,7 @@ const Settings: React.FC = () => {
                         </ul>
                       </li>
                     </ol>
-                  </Typography>
+                  </div>
                   
                   <Typography variant="body1" paragraph sx={{ mt: 2 }}>
                     <strong>Nota:</strong> Se stai utilizzando SlabsLink in ambiente di sviluppo (localhost), assicurati di aggiungere anche <code>http://localhost:3000/auth/google/callback</code> come URI di reindirizzamento autorizzato nelle credenziali OAuth 2.0.
@@ -828,7 +828,7 @@ const Settings: React.FC = () => {
                     color="primary"
                     disabled={!calendarSettings.googleCalendarEnabled || !calendarSettings.clientId || !calendarSettings.clientSecret}
                     onClick={() => {
-                      window.location.href = `${API_BASE_URL}/google-calendar/auth`;
+                      window.location.href = `${API_BASE_URL}/google-calendar/auth?clientId=${calendarSettings.clientId}&clientSecret=${calendarSettings.clientSecret}&redirectUri=${calendarSettings.redirectUri}`;
                     }}
                     sx={{ mt: 1 }}
                   >

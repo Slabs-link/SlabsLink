@@ -13,4 +13,7 @@ export interface CalendarSettings {
   channelId?: string;
   resourceId?: string;
   expiration?: string;
+  selectedCalendarId?: string;
+  availableCalendars?: Array<{id: string, summary: string}>;
+  googleCalendarEnabled?: boolean;
 }

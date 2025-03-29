@@ -427,9 +427,8 @@ router.post('/sync', async (req: Request, res: Response) => {
   }
 });
 
-export default router;
-
-googleCalendarRoutes.post('/api/google/webhook', async (req, res) => {
+// Aggiungi le rotte aggiuntive al router
+router.post('/webhook-callback', async (req, res) => {
   try {
     const channelId = req.headers['x-goog-channel-id'];
     const resourceId = req.headers['x-goog-resource-id'];
@@ -450,7 +449,7 @@ googleCalendarRoutes.post('/api/google/webhook', async (req, res) => {
   }
 });
 
-googleCalendarRoutes.post('/api/google/webhook/setup', async (req, res) => {
+router.post('/webhook-setup', async (req, res) => {
   try {
     const webhookUrl = req.body.webhookUrl;
     const googleCalendarService = new GoogleCalendarService();
@@ -459,6 +458,45 @@ googleCalendarRoutes.post('/api/google/webhook/setup', async (req, res) => {
   } catch (error) {
     console.error('Webhook setup error:', error);
     res.status(500).json({ error: 'Errore nella configurazione del webhook' });
+  }
+});
+
+
+// Endpoint per ottenere la lista dei calendari disponibili
+router.get('/calendars', async (req: Request, res: Response) => {
+  try {
+    const calendarService = new GoogleCalendarService();
+    await calendarService.configure();
+    const calendars = await calendarService.getAvailableCalendars();
+    res.json({ calendars });
+  } catch (error: any) {
+    console.error('Errore durante il recupero dei calendari:', error);
+    res.status(500).json({ 
+      message: 'Errore durante il recupero dei calendari', 
+      error: error.message 
+    });
+  }
+});
+
+// Endpoint per impostare il calendario selezionato
+router.post('/select-calendar', async (req: Request, res: Response) => {
+  try {
+    const { calendarId } = req.body;
+    if (!calendarId) {
+      return res.status(400).json({ message: 'ID calendario mancante' });
+    }
+    
+    const calendarService = new GoogleCalendarService();
+    await calendarService.configure();
+    await calendarService.setSelectedCalendar(calendarId);
+    
+    res.json({ message: 'Calendario selezionato con successo' });
+  } catch (error: any) {
+    console.error('Errore durante la selezione del calendario:', error);
+    res.status(500).json({ 
+      message: 'Errore durante la selezione del calendario', 
+      error: error.message 
+    });
   }
 });
 

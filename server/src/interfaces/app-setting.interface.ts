@@ -14,6 +14,8 @@ export interface CalendarSettings {
   channelId?: string;
   resourceId?: string;
   expiration?: string | number;
+  selectedCalendarId?: string;
+  availableCalendars?: Array<{id: string, summary: string}>;
   workingHours?: {
     mondayStart: string;
     mondayEnd: string;
