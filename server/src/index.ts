@@ -12,6 +12,7 @@ import templatesRoutes from './routes/templates.routes';
 import appointmentTypesRoutes from './routes/appointment-types.routes';
 import settingsRoutes from './routes/settings.routes';
 import licenseRoutes from './routes/license.routes';
+import backupsRoutes from './routes/backups.routes';
 import { checkDatabaseConnection } from './config/database-sqlite';
 import { runSqliteMigrations } from './db/migrations/sqlite-migrations';
 
@@ -37,7 +38,8 @@ app.get('/', (req, res) => {
       '/api/notifications',
       '/api/templates',
       '/api/appointment-types',
-      '/api/settings'
+      '/api/settings',
+      '/api/backups'
     ]
   });
 });
@@ -56,6 +58,8 @@ app.use('/api/license', licenseRoutes);
 import { googleCalendarRoutes } from './routes/google-calendar.routes';
 // ... existing code ...
 app.use('/api/google-calendar', googleCalendarRoutes);
+// Register backup routes
+app.use('/api/backups', backupsRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

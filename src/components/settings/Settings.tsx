@@ -6,6 +6,7 @@ import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import Sidebar from '../common/Sidebar';
+import { BackupSettings } from './BackupSettings';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -281,6 +282,7 @@ const Settings: React.FC = () => {
   const getAppointmentTypesTabIndex = () => {
     let index = 1; // Licenza è sempre l'indice 0
     if (licenseFeatures.whatsappIntegration) index++;
+    if (licenseFeatures.googleCalendarIntegration) index++;
     return index;
   };
   
@@ -526,6 +528,7 @@ const Settings: React.FC = () => {
                 {licenseFeatures.whatsappIntegration && <Tab label="WhatsApp" />}
                 {licenseFeatures.googleCalendarIntegration && <Tab label="Google Calendar" />}
                 <Tab label="Tipi di appuntamento" />
+                <Tab label="Backup" />
               </Tabs>
             </Box>
             
@@ -848,7 +851,7 @@ const Settings: React.FC = () => {
             )}
             
             {/* Appointment Types Settings */}
-            <TabPanel value={tabValue} index={getAppointmentTypesTabIndex() + 1}>
+            <TabPanel value={tabValue} index={getAppointmentTypesTabIndex()}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
                 <Typography variant="h6">Tipi di appuntamento</Typography>
                 <Button
@@ -909,9 +912,10 @@ const Settings: React.FC = () => {
             
 
             
-            {/* Placeholder for future settings */}
-            
-            {/* Placeholder for future settings */}
+            {/* Backup Settings */}
+            <TabPanel value={tabValue} index={getAppointmentTypesTabIndex() + 1}>
+              <BackupSettings />
+            </TabPanel>
           </Paper>
         </Container>
       </Box>

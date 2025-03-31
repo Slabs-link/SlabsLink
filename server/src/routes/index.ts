@@ -8,7 +8,8 @@ import licenseRoutes from './license.routes';
 import appointmentTypesRoutes from './appointment-types.routes';
 import appointmentsRoutes from './appointments.routes';
 import settingsRoutes from './settings.routes';
-import googleCalendarRoutes from './google-calendar.routes';
+import { googleCalendarRoutes } from './google-calendar.routes';
+import backupsRoutes from './backups.routes';
 
 const router = express.Router();
 
@@ -33,6 +34,8 @@ router.use('/settings', settingsRoutes);
 router.use('/license', licenseRoutes);
 // Google Calendar routes
 router.use('/google-calendar', googleCalendarRoutes);
+// Backup routes
+router.use('/backups', backupsRoutes);
 // Log delle route registrate
 console.log('Routes registered:');
 console.log('- /api/routes-test');
