@@ -8,6 +8,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import Sidebar from '../common/Sidebar';
 import { BackupSettings } from './BackupSettings';
 import { GoogleCalendarTestSettings } from './GoogleCalendarTestSettings';
+import { useLocation } from 'react-router-dom';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -48,6 +49,7 @@ const Settings: React.FC = () => {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const location = useLocation();
   const [licenseFeatures, setLicenseFeatures] = useState({
     whatsappIntegration: false,
     googleCalendarIntegration: false
@@ -446,6 +448,28 @@ const Settings: React.FC = () => {
     
     fetchSettings();
   }, []);
+  
+  // Gestisce i parametri di query URL per impostare la scheda attiva
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const tabParam = searchParams.get('tab');
+    
+    if (tabParam === 'calendar') {
+      // Trova l'indice della scheda del calendario
+      let calendarTabIndex = 1; // Indice di default
+      if (licenseFeatures.whatsappIntegration) calendarTabIndex++;
+      setTabValue(calendarTabIndex);
+    }
+    
+    // Verifica se l'autenticazione è avvenuta con successo
+    const authSuccess = searchParams.get('auth') === 'success';
+    if (authSuccess) {
+      setSaveSuccess(true);
+      setTimeout(() => {
+        setSaveSuccess(false);
+      }, 3000);
+    }
+  }, [location.search, licenseFeatures]);
   
   const handleSaveSettings = async () => {
     try {
