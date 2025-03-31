@@ -1,6 +1,6 @@
 import express from 'express';
 import { Router, Request, Response } from 'express';
-import { getAuthUrl, handleAuthCallback, handleWebhook, setupWebhook, getCalendarEvents, syncAppointments } from '../controllers/google-calendar.controller';
+import { getAuthUrl, handleAuthCallback, handleWebhook, setupWebhook, getCalendarEvents, syncAppointments, testSyncAppointment, checkIntegrationStatus } from '../controllers/google-calendar.controller';
 import { GoogleCalendarService } from '../services/google-calendar.service';
 import { Appointment } from '../interfaces/appointment.interface';
 import { calendar_v3 } from 'googleapis/build/src/apis/calendar/v3';
@@ -35,6 +35,12 @@ router.post('/setup-webhook', setupWebhook);
 
 // Endpoint per sincronizzare gli appuntamenti con Google Calendar
 router.post('/sync', syncAppointments);
+
+// Endpoint per testare la sincronizzazione di un appuntamento specifico
+router.get('/test-sync/:appointmentId', testSyncAppointment);
+
+// Endpoint per verificare lo stato dell'integrazione
+router.get('/status', checkIntegrationStatus);
 
 // Funzione per creare un appuntamento da un evento di Google Calendar
 async function createAppointmentFromEvent(eventData: calendar_v3.Schema$Event) {

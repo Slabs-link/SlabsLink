@@ -209,15 +209,69 @@ export const syncAppointments = async (req: Request, res: Response) => {
   try {
     logMessage('Syncing appointments with Google Calendar');
     
-    const appointments = await googleCalendarService.syncAppointments();
+    const results = await googleCalendarService.syncAppointments();
+    logMessage(`Sync completed with ${results.filter(r => r.success).length} successful and ${results.filter(r => !r.success).length} failed operations`);
+    
     res.json({
       message: 'Appuntamenti sincronizzati con successo',
-      appointments
+      results
     });
   } catch (error) {
     logMessage(`Error syncing appointments: ${error instanceof Error ? error.message : 'Unknown error'}`);
     res.status(500).json({ 
       error: 'Failed to sync appointments',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+};
+
+/**
+ * Testa la sincronizzazione di un appuntamento specifico
+ * @param req - Express request object
+ * @param res - Express response object
+ */
+export const testSyncAppointment = async (req: Request, res: Response) => {
+  try {
+    const { appointmentId } = req.params;
+    
+    if (!appointmentId) {
+      return res.status(400).json({ message: 'ID appuntamento mancante' });
+    }
+    
+    logMessage(`Testing sync for appointment ID: ${appointmentId}`);
+    
+    const result = await googleCalendarService.testSyncAppointment(Number(appointmentId));
+    
+    logMessage(`Test sync result: ${result.success ? 'Success' : 'Failed'} - ${result.message}`);
+    
+    res.json(result);
+  } catch (error) {
+    logMessage(`Error testing appointment sync: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    res.status(500).json({ 
+      error: 'Failed to test appointment sync',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+};
+
+/**
+ * Verifica lo stato dell'integrazione con Google Calendar
+ * @param req - Express request object
+ * @param res - Express response object
+ */
+export const checkIntegrationStatus = async (req: Request, res: Response) => {
+  try {
+    logMessage('Checking Google Calendar integration status');
+    
+    const status = await googleCalendarService.checkIntegrationStatus();
+    
+    logMessage(`Integration status: ${status.enabled ? 'Enabled' : 'Disabled'}, ${status.authenticated ? 'Authenticated' : 'Not authenticated'}`);
+    
+    res.json(status);
+  } catch (error) {
+    logMessage(`Error checking integration status: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    res.status(500).json({ 
+      error: 'Failed to check integration status',
       details: error instanceof Error ? error.message : 'Unknown error'
     });
   }

@@ -17,6 +17,48 @@ export class GoogleCalendarService {
   constructor() {}
 
   /**
+   * Funzione di logging per Google Calendar
+   * @param level - Livello di log (info, warn, error)
+   * @param message - Messaggio da loggare
+   * @param data - Dati aggiuntivi opzionali
+   */
+  private log(level: 'info' | 'warn' | 'error', message: string, data?: any): void {
+    const timestamp = new Date().toISOString();
+    const prefix = `[GoogleCalendarService][${timestamp}][${level.toUpperCase()}]`;
+    
+    // Formatta i dati per una migliore leggibilità se sono un oggetto
+    let formattedData = data;
+    if (data && typeof data === 'object') {
+      try {
+        // Rimuovi proprietà troppo verbose o circolari
+        const sanitizedData = { ...data };
+        if (sanitizedData.tokens) sanitizedData.tokens = '[REDACTED]';
+        formattedData = sanitizedData;
+      } catch (e) {
+        formattedData = 'Impossibile formattare i dati';
+      }
+    }
+    
+    if (formattedData) {
+      if (level === 'error') {
+        console.error(`${prefix} ${message}`, formattedData);
+      } else if (level === 'warn') {
+        console.warn(`${prefix} ${message}`, formattedData);
+      } else {
+        console.log(`${prefix} ${message}`, formattedData);
+      }
+    } else {
+      if (level === 'error') {
+        console.error(`${prefix} ${message}`);
+      } else if (level === 'warn') {
+        console.warn(`${prefix} ${message}`);
+      } else {
+        console.log(`${prefix} ${message}`);
+      }
+    }
+  }
+
+  /**
    * Verifica se il servizio è abilitato
    */
   private async getCalendarSettings(): Promise<CalendarSettings | null> {
@@ -44,7 +86,9 @@ export class GoogleCalendarService {
 
   async isServiceEnabled(): Promise<boolean> {
     const settings = await this.getCalendarSettings();
-    return settings?.googleCalendarEnabled === true;
+    const isEnabled = settings?.googleCalendarEnabled === true;
+    this.log('info', `Servizio Google Calendar ${isEnabled ? 'abilitato' : 'disabilitato'}`);
+    return isEnabled;
   }
 
   /**
@@ -52,28 +96,38 @@ export class GoogleCalendarService {
    */
   async isServiceAuthenticated(): Promise<boolean> {
     const settings = await this.getCalendarSettings();
-    return !!settings?.tokens;
+    const isAuthenticated = !!settings?.tokens;
+    this.log('info', `Servizio Google Calendar ${isAuthenticated ? 'autenticato' : 'non autenticato'}`);
+    return isAuthenticated;
   }
 
   /**
    * Configura il client OAuth2
    */
   async configure(): Promise<void> {
+    this.log('info', 'Configurazione del servizio Google Calendar');
     this.db = getDatabase();
-    if (!this.db) throw new Error('Database connection failed');
+    if (!this.db) {
+      this.log('error', 'Connessione al database fallita');
+      throw new Error('Database connection failed');
+    }
+    
     const setting = await (await this.db.get<AppSetting>(
       'SELECT * FROM app_settings WHERE key = ?',
       'calendar'
     ));
     
     if (!setting) {
+      this.log('error', 'Impostazioni di Google Calendar non trovate nel database');
       throw new Error('Impostazioni di Google Calendar non configurate');
     }
     
     try {
       const calendarSettings = JSON.parse(setting.value);
+      this.log('info', 'Impostazioni di Google Calendar caricate dal database');
       
       if (!calendarSettings.clientId || !calendarSettings.clientSecret || !calendarSettings.redirectUri) {
+        this.log('error', 'Credenziali OAuth2 mancanti nelle impostazioni');
         throw new Error('Credenziali OAuth2 mancanti');
       }
       
@@ -82,13 +136,17 @@ export class GoogleCalendarService {
         calendarSettings.clientSecret,
         calendarSettings.redirectUri
       );
+      this.log('info', 'Client OAuth2 creato con successo');
       
       if (calendarSettings.tokens) {
         this.oauth2Client.setCredentials(calendarSettings.tokens);
         this.calendar = google.calendar({ version: 'v3', auth: this.oauth2Client });
+        this.log('info', 'Token OAuth2 impostati e client Google Calendar inizializzato');
+      } else {
+        this.log('warn', 'Token OAuth2 mancanti, autenticazione richiesta');
       }
     } catch (error) {
-      console.error('Errore durante la configurazione di Google Calendar:', error);
+      this.log('error', 'Errore durante la configurazione di Google Calendar', error);
       throw error;
     }
   }
@@ -285,14 +343,26 @@ export class GoogleCalendarService {
   }
 
   async syncAppointment(appointment: Appointment): Promise<{ id: string }> {
+    this.log('info', `Inizio sincronizzazione appuntamento ID: ${appointment.id}`, {
+      patient_name: appointment.patient_name,
+      start_time: appointment.start_time,
+      end_time: appointment.end_time,
+      has_google_id: !!appointment.google_calendar_event_id
+    });
+    
     try {
       if (!this.calendar) {
+        this.log('info', 'Client Google Calendar non inizializzato, tentativo di configurazione');
         await this.configure();
-        if (!this.calendar) throw new Error('Google Calendar service not authenticated');
+        if (!this.calendar) {
+          this.log('error', 'Impossibile autenticare il servizio Google Calendar dopo la configurazione');
+          throw new Error('Google Calendar service not authenticated');
+        }
       }
 
       // Se non ci sono start_time e end_time, proviamo a crearli da date e time
       if (!appointment.start_time || !appointment.end_time) {
+        this.log('info', 'Date di inizio/fine mancanti, tentativo di creazione da date e time');
         if (appointment.date && appointment.time && appointment.duration) {
           try {
             // Creiamo le date di inizio e fine dall'appuntamento
@@ -302,6 +372,7 @@ export class GoogleCalendarService {
             // Validazione dei valori della data
             if (isNaN(year) || isNaN(month) || isNaN(day) || isNaN(hours) || isNaN(minutes) ||
                 month < 1 || month > 12 || day < 1 || day > 31 || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+              this.log('error', `Valori di data o ora non validi: ${appointment.date} ${appointment.time}`);
               throw new Error(`Invalid date or time values: ${appointment.date} ${appointment.time}`);
             }
             
@@ -310,6 +381,7 @@ export class GoogleCalendarService {
             
             // Verifica che la data sia valida
             if (isNaN(startDate.getTime())) {
+              this.log('error', `Data creata non valida: ${year}-${month}-${day} ${hours}:${minutes}`);
               throw new Error(`Invalid date created: ${year}-${month}-${day} ${hours}:${minutes}`);
             }
             
@@ -320,17 +392,26 @@ export class GoogleCalendarService {
             
             // Verifica che la data di fine sia valida
             if (isNaN(endDate.getTime())) {
+              this.log('error', `Data di fine non valida creata con durata: ${appointment.duration}`);
               throw new Error(`Invalid end date created with duration: ${appointment.duration}`);
             }
             
             appointment.end_time = endDate.toISOString();
+            this.log('info', 'Date di inizio/fine create con successo', {
+              start_time: appointment.start_time,
+              end_time: appointment.end_time
+            });
           } catch (error) {
-            console.error('Error creating appointment dates:', error);
+            this.log('error', 'Errore durante la creazione delle date dell\'appuntamento', error);
             // Non propaghiamo l'errore per evitare di interrompere il flusso principale
             return { id: '' };
           }
         } else {
-          console.error('Missing appointment time parameters');
+          this.log('error', 'Parametri di tempo dell\'appuntamento mancanti', {
+            has_date: !!appointment.date,
+            has_time: !!appointment.time,
+            has_duration: !!appointment.duration
+          });
           // Non propaghiamo l'errore per evitare di interrompere il flusso principale
           return { id: '' };
         }
@@ -340,44 +421,53 @@ export class GoogleCalendarService {
       try {
         if (!appointment.google_calendar_event_id) {
           // Tentiamo di creare l'evento su Google Calendar
+          this.log('info', 'Creazione nuovo evento su Google Calendar');
           try {
             eventId = await this.createCalendarEvent(appointment);
+            this.log('info', `Evento creato con successo su Google Calendar, ID: ${eventId}`);
+            
             // Aggiorniamo lo stato di sincronizzazione solo se abbiamo un ID evento valido
             if (eventId) {
               try {
                 await this.updateLocalAppointmentSyncStatus(appointment.id, 'synced', eventId);
+                this.log('info', `Stato di sincronizzazione aggiornato per l'appuntamento ${appointment.id}`);
               } catch (syncError) {
                 // Se fallisce l'aggiornamento dello stato, logghiamo ma non interrompiamo
-                console.warn(`Impossibile aggiornare lo stato di sincronizzazione per l'appuntamento ${appointment.id}. Verrà aggiornato in seguito.`);
+                this.log('warn', `Impossibile aggiornare lo stato di sincronizzazione per l'appuntamento ${appointment.id}. Verrà aggiornato in seguito.`, syncError);
               }
+            } else {
+              this.log('warn', 'Evento creato ma ID non ricevuto da Google Calendar');
             }
           } catch (calendarError) {
-            console.error('Errore durante la creazione dell\'evento su Google Calendar:', calendarError);
+            this.log('error', 'Errore durante la creazione dell\'evento su Google Calendar', calendarError);
             // Tentiamo di aggiornare lo stato come fallito, ma non interrompiamo il flusso
             try {
               await this.updateLocalAppointmentSyncStatus(appointment.id, 'failed');
+              this.log('info', `Stato di sincronizzazione impostato come fallito per l'appuntamento ${appointment.id}`);
             } catch (syncError) {
-              console.warn(`Impossibile aggiornare lo stato di sincronizzazione fallita per l'appuntamento ${appointment.id}.`);
+              this.log('warn', `Impossibile aggiornare lo stato di sincronizzazione fallita per l'appuntamento ${appointment.id}.`, syncError);
             }
           }
         } else {
           // Tentiamo di aggiornare l'evento esistente
+          this.log('info', `Aggiornamento evento esistente su Google Calendar, ID: ${appointment.google_calendar_event_id}`);
           try {
             await this.updateCalendarEvent(appointment);
             eventId = appointment.google_calendar_event_id;
+            this.log('info', `Evento aggiornato con successo su Google Calendar, ID: ${eventId}`);
           } catch (updateError) {
-            console.error('Errore durante l\'aggiornamento dell\'evento su Google Calendar:', updateError);
+            this.log('error', 'Errore durante l\'aggiornamento dell\'evento su Google Calendar', updateError);
             // Non interrompiamo il flusso principale
           }
         }
         return { id: eventId };
       } catch (error) {
-        console.error('Errore durante la sincronizzazione con Google Calendar:', error);
+        this.log('error', 'Errore durante la sincronizzazione con Google Calendar', error);
         // Non propaghiamo l'errore per evitare di interrompere il flusso principale
         return { id: '' };
       }
     } catch (error) {
-      console.error('Errore generale durante la sincronizzazione:', error);
+      this.log('error', 'Errore generale durante la sincronizzazione', error);
       // Non propaghiamo l'errore per evitare di interrompere il flusso principale
       return { id: '' };
     }
@@ -506,25 +596,250 @@ export class GoogleCalendarService {
 
   /**
    * Sincronizza gli appuntamenti con Google Calendar
+   * @returns Un array con i risultati della sincronizzazione
    */
-  public async syncAppointments(): Promise<void> {
-    if (!await this.isServiceEnabled()) return;
+  public async syncAppointments(): Promise<{id: number, success: boolean, message: string}[]> {
+    this.log('info', 'Avvio sincronizzazione di tutti gli appuntamenti non sincronizzati');
+    
+    if (!await this.isServiceEnabled()) {
+      this.log('warn', 'Sincronizzazione non eseguita: servizio Google Calendar non abilitato');
+      return [{id: 0, success: false, message: 'Servizio Google Calendar non abilitato'}];
+    }
+
+    if (!await this.isServiceAuthenticated()) {
+      this.log('warn', 'Sincronizzazione non eseguita: servizio Google Calendar non autenticato');
+      return [{id: 0, success: false, message: 'Servizio Google Calendar non autenticato'}];
+    }
 
     const unsyncedAppointments = await this.getUnsyncedAppointments();
+    this.log('info', `Trovati ${unsyncedAppointments.length} appuntamenti da sincronizzare`);
+    
+    const results = [];
     
     for (const appointment of unsyncedAppointments) {
       try {
+        this.log('info', `Sincronizzazione appuntamento ID: ${appointment.id}`, {
+          patient_name: appointment.patient_name,
+          date: appointment.date,
+          time: appointment.time
+        });
+        
         if (appointment.google_calendar_event_id) {
           await this.updateCalendarEvent(appointment);
+          this.log('info', `Aggiornato evento esistente per appuntamento ID: ${appointment.id}`);
+          results.push({id: appointment.id, success: true, message: 'Evento aggiornato con successo'});
         } else {
           const eventId = await this.createCalendarEvent(appointment);
+          this.log('info', `Creato nuovo evento per appuntamento ID: ${appointment.id}, Event ID: ${eventId}`);
           // Aggiorna l'ID dell'evento nel database invece di chiamare updateAppointmentFromEvent con un ID
           await this.updateLocalAppointmentSyncStatus(appointment.id, 'synced', eventId);
+          results.push({id: appointment.id, success: true, message: `Evento creato con successo, ID: ${eventId}`});
         }
         await this.markAppointmentSynced(appointment.id);
       } catch (error) {
+        this.log('error', `Errore durante la sincronizzazione dell'appuntamento ID: ${appointment.id}`, error);
         await this.handleSyncError(appointment.id, error);
+        results.push({id: appointment.id, success: false, message: error instanceof Error ? error.message : 'Errore sconosciuto'});
       }
+    }
+    
+    this.log('info', `Sincronizzazione completata per ${results.length} appuntamenti`);
+    return results;
+  }
+  
+  /**
+   * Verifica lo stato dell'integrazione con Google Calendar
+   * @returns Oggetto con informazioni dettagliate sullo stato dell'integrazione
+   */
+  /**
+   * Verifica lo stato dell'integrazione con Google Calendar
+   * @returns Oggetto con lo stato dell'integrazione
+   */
+  public async checkIntegrationStatus(): Promise<{
+    enabled: boolean;
+    authenticated: boolean;
+    calendarId: string | null;
+    lastSync: string | null;
+    pendingAppointments: number;
+    message: string;
+  }> {
+    this.log('info', 'Verifica dello stato dell\'integrazione con Google Calendar');
+    
+    try {
+      const isEnabled = await this.isServiceEnabled();
+      const isAuthenticated = isEnabled ? await this.isServiceAuthenticated() : false;
+      
+      // Ottieni le impostazioni del calendario
+      const settings = await this.getCalendarSettings();
+      const calendarId = settings?.selectedCalendarId || 'primary';
+      
+      // Conta gli appuntamenti in attesa di sincronizzazione
+      this.db = getDatabase();
+      if (!this.db) throw new Error('Database connection failed');
+      
+      let pendingCount = { count: 0 };
+      let lastSyncRecord = { last_sync: null };
+      
+      try {
+        // Verifica se la tabella appointments esiste
+        const tableExists = await this.db.get(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='appointments'"
+        );
+        
+        if (tableExists) {
+          // Verifica se la colonna sync_status esiste
+          const columnExists = await this.db.get(
+            "PRAGMA table_info(appointments)"
+          ).then(columns => columns.some((col: any) => col.name === 'sync_status'));
+          
+          if (columnExists) {
+            // Conta gli appuntamenti in attesa di sincronizzazione
+            pendingCount = await this.db.get(
+              'SELECT COUNT(*) as count FROM appointments WHERE sync_status IS NULL OR sync_status = "pending"'
+            ) || { count: 0 };
+            
+            // Ottieni la data dell'ultima sincronizzazione
+            lastSyncRecord = await this.db.get(
+              'SELECT MAX(updated_at) as last_sync FROM appointments WHERE sync_status = "synced"'
+            ) || { last_sync: null };
+          }
+        }
+      } catch (dbError) {
+        this.log('warn', 'Errore durante la query al database', dbError);
+        // Continua con i valori predefiniti
+      }
+      
+      let message = '';
+      if (!isEnabled) {
+        message = 'Integrazione con Google Calendar non abilitata';
+      } else if (!isAuthenticated) {
+        message = 'Integrazione con Google Calendar non autenticata';
+      } else {
+        message = 'Integrazione con Google Calendar attiva e funzionante';
+      }
+      
+      const result = {
+        enabled: isEnabled,
+        authenticated: isAuthenticated,
+        calendarId,
+        lastSync: lastSyncRecord?.last_sync || null,
+        pendingAppointments: pendingCount?.count || 0,
+        message
+      };
+      
+      this.log('info', 'Stato dell\'integrazione verificato', result);
+      return result;
+    } catch (error) {
+      this.log('error', 'Errore durante la verifica dello stato dell\'integrazione', error);
+      return {
+        enabled: false,
+        authenticated: false,
+        calendarId: null,
+        lastSync: null,
+        pendingAppointments: 0,
+        message: `Errore: ${error instanceof Error ? error.message : 'Errore sconosciuto'}`
+      };
+    }
+  }
+  
+  /**
+   * Testa la sincronizzazione di un appuntamento specifico
+   * @param appointmentId ID dell'appuntamento da sincronizzare
+   * @returns Risultato del test di sincronizzazione
+   */
+  public async testSyncAppointment(appointmentId: number): Promise<{
+    success: boolean;
+    appointmentId: number;
+    eventId: string | null;
+    message: string;
+    details?: any;
+  }> {
+    this.log('info', `Test di sincronizzazione per l'appuntamento ID: ${appointmentId}`);
+    
+    try {
+      // Verifica se il servizio è abilitato e autenticato
+      const isEnabled = await this.isServiceEnabled();
+      if (!isEnabled) {
+        this.log('warn', 'Test fallito: servizio Google Calendar non abilitato');
+        return {
+          success: false,
+          appointmentId,
+          eventId: null,
+          message: 'Servizio Google Calendar non abilitato'
+        };
+      }
+      
+      const isAuthenticated = await this.isServiceAuthenticated();
+      if (!isAuthenticated) {
+        this.log('warn', 'Test fallito: servizio Google Calendar non autenticato');
+        return {
+          success: false,
+          appointmentId,
+          eventId: null,
+          message: 'Servizio Google Calendar non autenticato'
+        };
+      }
+      
+      // Configura il client
+      await this.configure();
+      
+      // Ottieni i dettagli dell'appuntamento dal database
+      this.db = getDatabase();
+      if (!this.db) throw new Error('Database connection failed');
+      
+      const appointment = await this.db.get(
+        'SELECT * FROM appointments WHERE id = ?',
+        appointmentId
+      );
+      
+      if (!appointment) {
+        this.log('error', `Appuntamento ID: ${appointmentId} non trovato`);
+        return {
+          success: false,
+          appointmentId,
+          eventId: null,
+          message: 'Appuntamento non trovato'
+        };
+      }
+      
+      this.log('info', `Appuntamento trovato, dettagli:`, {
+        id: appointment.id,
+        patient_name: appointment.patient_name,
+        date: appointment.date,
+        time: appointment.time,
+        duration: appointment.duration,
+        google_calendar_event_id: appointment.google_calendar_event_id
+      });
+      
+      // Esegui la sincronizzazione
+      const syncResult = await this.syncAppointment(appointment);
+      
+      if (syncResult && syncResult.id) {
+        this.log('info', `Test completato con successo. Event ID: ${syncResult.id}`);
+        return {
+          success: true,
+          appointmentId,
+          eventId: syncResult.id,
+          message: 'Sincronizzazione completata con successo'
+        };
+      } else {
+        this.log('warn', `Test completato ma nessun ID evento ricevuto`);
+        return {
+          success: false,
+          appointmentId,
+          eventId: null,
+          message: 'Sincronizzazione completata ma nessun ID evento ricevuto'
+        };
+      }
+    } catch (error) {
+      this.log('error', `Errore durante il test di sincronizzazione per l'appuntamento ID: ${appointmentId}`, error);
+      return {
+        success: false,
+        appointmentId,
+        eventId: null,
+        message: `Errore: ${error instanceof Error ? error.message : 'Errore sconosciuto'}`,
+        details: error
+      };
     }
   }
 

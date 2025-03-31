@@ -7,6 +7,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import Sidebar from '../common/Sidebar';
 import { BackupSettings } from './BackupSettings';
+import { GoogleCalendarTestSettings } from './GoogleCalendarTestSettings';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -282,7 +283,7 @@ const Settings: React.FC = () => {
   const getAppointmentTypesTabIndex = () => {
     let index = 1; // Licenza è sempre l'indice 0
     if (licenseFeatures.whatsappIntegration) index++;
-    if (licenseFeatures.googleCalendarIntegration) index++;
+    if (licenseFeatures.googleCalendarIntegration) index += 2; // +2 perché ora abbiamo sia la scheda Google Calendar che la scheda Test Google Calendar
     return index;
   };
   
@@ -527,6 +528,7 @@ const Settings: React.FC = () => {
                 <Tab label="Licenza" />
                 {licenseFeatures.whatsappIntegration && <Tab label="WhatsApp" />}
                 {licenseFeatures.googleCalendarIntegration && <Tab label="Google Calendar" />}
+                {licenseFeatures.googleCalendarIntegration && <Tab label="Test Google Calendar" />}
                 <Tab label="Tipi di appuntamento" />
                 <Tab label="Backup" />
               </Tabs>
@@ -847,6 +849,13 @@ const Settings: React.FC = () => {
                     </ul>
                   </Typography>
                 </Box>
+              </TabPanel>
+            )}
+            
+            {/* Google Calendar Test Settings - Visible only if license allows */}
+            {licenseFeatures.googleCalendarIntegration && (
+              <TabPanel value={tabValue} index={licenseFeatures.whatsappIntegration ? 3 : 2}>
+                <GoogleCalendarTestSettings />
               </TabPanel>
             )}
             
