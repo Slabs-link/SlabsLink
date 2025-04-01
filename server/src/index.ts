@@ -3,6 +3,7 @@ import cors from 'cors';
 import morgan from 'morgan';
 import fs from 'fs';
 import path from 'path';
+import cron from 'node-cron';
 import setupRoutes from './routes/setup.routes';
 import usersRoutes from './routes/users.routes';
 import comuniRoutes from './routes/comuni.routes';
@@ -15,6 +16,7 @@ import licenseRoutes from './routes/license.routes';
 import backupsRoutes from './routes/backups.routes';
 import { checkDatabaseConnection } from './config/database-sqlite';
 import { runSqliteMigrations } from './db/migrations/sqlite-migrations';
+import { GoogleCalendarService } from './services/google-calendar.service';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -90,8 +92,37 @@ const startServer = async () => {
     }
     
     // Avvia il server
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       console.log(`Server in esecuzione su http://localhost:${PORT}`);
+    });
+    
+    // Inizializza il servizio Google Calendar
+    const googleCalendarService = new GoogleCalendarService();
+    
+    // Configura la sincronizzazione automatica degli appuntamenti con Google Calendar
+    // Esegui la sincronizzazione ogni ora alle :00 minuti
+    cron.schedule('0 * * * *', async () => {
+      console.log(`[${new Date().toISOString()}] Avvio sincronizzazione automatica degli appuntamenti con Google Calendar`);
+      try {
+        // Verifica se il servizio è abilitato e autenticato
+        const isEnabled = await googleCalendarService.isServiceEnabled();
+        const isAuthenticated = isEnabled ? await googleCalendarService.isServiceAuthenticated() : false;
+        
+        if (isEnabled && isAuthenticated) {
+          // Esegui la sincronizzazione automatica
+          const results = await googleCalendarService.autoSyncAppointments();
+          console.log(`[${new Date().toISOString()}] Sincronizzazione completata: ${results.length} appuntamenti processati`);
+          
+          // Log dei risultati
+          const successCount = results.filter(r => r.success).length;
+          const failCount = results.filter(r => !r.success).length;
+          console.log(`[${new Date().toISOString()}] Risultati sincronizzazione: ${successCount} successi, ${failCount} fallimenti`);
+        } else {
+          console.log(`[${new Date().toISOString()}] Sincronizzazione automatica saltata: servizio ${!isEnabled ? 'non abilitato' : 'non autenticato'}`);
+        }
+      } catch (error) {
+        console.error(`[${new Date().toISOString()}] Errore durante la sincronizzazione automatica:`, error);
+      }
     });
   } catch (error) {
     console.error('Errore durante l\'avvio del server:', error);

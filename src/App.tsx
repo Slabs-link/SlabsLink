@@ -18,6 +18,8 @@ import Notifications from './components/notifications/Notifications';
 import TemplateManager from './components/templates/TemplateManager';
 import LicenseCheck from './components/system/LicenseCheck';
 import GoogleAuthCallback from './components/settings/GoogleAuthCallback';
+// Importa il componente Users
+import Users from './components/users/Users';
 
 // API base URL - will connect to our backend
 const API_BASE_URL = 'http://localhost:3001/api';
@@ -61,6 +63,10 @@ function App() {
             <Route path="/appointments" element={<Appointments />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/setup" element={<SetupWizard />} />
+            {/* Aggiungi la rotta per la pagina delle notifiche */}
+            <Route path="/notifications" element={<Notifications />} />
+            {/* Aggiungi la rotta per la pagina degli utenti */}
+            <Route path="/users" element={<Users />} />
             {/* Aggiungi una route per gestire il reindirizzamento dopo l'autenticazione di Google Calendar */}
             <Route path="/auth/google/callback" element={<Navigate to="/settings?tab=calendar&auth=success" />} />
           </Routes>

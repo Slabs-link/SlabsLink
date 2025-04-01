@@ -683,8 +683,13 @@ export class GoogleCalendarService {
       calendarId = settings.selectedCalendarId;
     }
 
+    // Formatta il titolo dell'evento includendo il titolo dell'appuntamento e il nome del paziente
+    const eventTitle = appointment.title 
+      ? `${appointment.title}: ${appointment.patient_name}` 
+      : `Appuntamento: ${appointment.patient_name}`;
+      
     const event: calendar_v3.Schema$Event = {
-      summary: `Appuntamento: ${appointment.patient_name}`,
+      summary: eventTitle,
       description: appointment.notes,
       start: {
         dateTime: new Date(appointment.start_time).toISOString(),
@@ -734,8 +739,13 @@ export class GoogleCalendarService {
       calendarId = settings.selectedCalendarId;
     }
 
+    // Formatta il titolo dell'evento includendo il titolo dell'appuntamento e il nome del paziente
+    const eventTitle = appointment.title 
+      ? `${appointment.title}: ${appointment.patient_name}` 
+      : `Appuntamento: ${appointment.patient_name}`;
+      
     const event: calendar_v3.Schema$Event = {
-      summary: `Appuntamento: ${appointment.patient_name}`,
+      summary: eventTitle,
       description: appointment.notes,
       start: {
         dateTime: new Date(appointment.start_time).toISOString(),
@@ -967,7 +977,15 @@ export class GoogleCalendarService {
         return [];
       }
       
-      const appointments = this.db.prepare('SELECT * FROM appointments WHERE sync_status IS NULL').all() as Appointment[] || [];
+      // Recupera gli appuntamenti che non sono mai stati sincronizzati (sync_status IS NULL)
+      // o che sono stati modificati dopo l'ultima sincronizzazione (sync_status = 'modified')
+      const appointments = this.db.prepare(
+        `SELECT a.*, u.first_name, u.last_name 
+         FROM appointments a 
+         LEFT JOIN users u ON a.patient_id = u.id 
+         WHERE a.sync_status IS NULL OR a.sync_status = 'modified'`
+      ).all() as Appointment[] || [];
+      
       this.log('info', `Trovati ${appointments.length} appuntamenti non sincronizzati`);
       return appointments;
     } catch (error) {
@@ -976,6 +994,51 @@ export class GoogleCalendarService {
         this.log('error', 'Database non inizializzato durante il recupero degli appuntamenti non sincronizzati');
       } else {
         this.log('error', 'Errore durante il recupero degli appuntamenti non sincronizzati', error);
+      }
+      return [];
+    }
+  }
+  
+  /**
+   * Recupera gli appuntamenti futuri che devono essere sincronizzati
+   * @returns Array di appuntamenti futuri da sincronizzare
+   */
+  private async getFutureAppointments(): Promise<Appointment[]> {
+    try {
+      this.log('info', 'Recupero appuntamenti futuri da sincronizzare');
+      this.db = getDatabase();
+      
+      // Verifica se la tabella appointments esiste
+      const tableExists = this.db.prepare(
+        `SELECT name FROM sqlite_master WHERE type='table' AND name='appointments'`
+      ).get();
+      
+      if (!tableExists) {
+        this.log('warn', 'Tabella appointments non trovata nel database');
+        return [];
+      }
+      
+      // Data corrente in formato ISO
+      const currentDate = new Date().toISOString();
+      
+      // Recupera gli appuntamenti futuri che non sono mai stati sincronizzati o che sono stati modificati
+      const appointments = this.db.prepare(
+        `SELECT a.*, u.first_name, u.last_name 
+         FROM appointments a 
+         LEFT JOIN users u ON a.patient_id = u.id 
+         WHERE (a.sync_status IS NULL OR a.sync_status = 'modified') 
+         AND a.start_time > ? 
+         ORDER BY a.start_time ASC`
+      ).all(currentDate) as Appointment[] || [];
+      
+      this.log('info', `Trovati ${appointments.length} appuntamenti futuri da sincronizzare`);
+      return appointments;
+    } catch (error) {
+      // Gestisci specificamente l'errore di database non inizializzato
+      if (error instanceof Error && error.message.includes('Database non inizializzato')) {
+        this.log('error', 'Database non inizializzato durante il recupero degli appuntamenti futuri');
+      } else {
+        this.log('error', 'Errore durante il recupero degli appuntamenti futuri', error);
       }
       return [];
     }
@@ -1152,6 +1215,64 @@ export class GoogleCalendarService {
     }
     
     this.log('info', `Sincronizzazione completata per ${results.length} appuntamenti`);
+    return results;
+  }
+  
+  /**
+   * Sincronizza automaticamente gli appuntamenti futuri con Google Calendar
+   * Questo metodo è progettato per essere chiamato periodicamente da un job schedulato
+   * @returns Un array con i risultati della sincronizzazione
+   */
+  public async autoSyncAppointments(): Promise<{id: number, success: boolean, message: string}[]> {
+    this.log('info', 'Avvio sincronizzazione automatica degli appuntamenti futuri');
+    
+    if (!await this.isServiceEnabled()) {
+      this.log('warn', 'Sincronizzazione automatica non eseguita: servizio Google Calendar non abilitato');
+      return [{id: 0, success: false, message: 'Servizio Google Calendar non abilitato'}];
+    }
+
+    if (!await this.isServiceAuthenticated()) {
+      this.log('warn', 'Sincronizzazione automatica non eseguita: servizio Google Calendar non autenticato');
+      return [{id: 0, success: false, message: 'Servizio Google Calendar non autenticato'}];
+    }
+
+    const futureAppointments = await this.getFutureAppointments();
+    this.log('info', `Trovati ${futureAppointments.length} appuntamenti futuri da sincronizzare`);
+    
+    if (futureAppointments.length === 0) {
+      this.log('info', 'Nessun appuntamento futuro da sincronizzare');
+      return [];
+    }
+    
+    const results = [];
+    
+    for (const appointment of futureAppointments) {
+      try {
+        this.log('info', `Sincronizzazione automatica appuntamento ID: ${appointment.id}`, {
+          patient_name: appointment.patient_name,
+          title: appointment.title,
+          start_time: appointment.start_time
+        });
+        
+        if (appointment.google_calendar_event_id) {
+          await this.updateCalendarEvent(appointment);
+          this.log('info', `Aggiornato evento esistente per appuntamento ID: ${appointment.id}`);
+          results.push({id: appointment.id, success: true, message: 'Evento aggiornato con successo'});
+        } else {
+          const eventId = await this.createCalendarEvent(appointment);
+          this.log('info', `Creato nuovo evento per appuntamento ID: ${appointment.id}, Event ID: ${eventId}`);
+          await this.updateLocalAppointmentSyncStatus(appointment.id, 'synced', eventId);
+          results.push({id: appointment.id, success: true, message: `Evento creato con successo, ID: ${eventId}`});
+        }
+        await this.markAppointmentSynced(appointment.id);
+      } catch (error) {
+        this.log('error', `Errore durante la sincronizzazione automatica dell'appuntamento ID: ${appointment.id}`, error);
+        await this.handleSyncError(appointment.id, error);
+        results.push({id: appointment.id, success: false, message: error instanceof Error ? error.message : 'Errore sconosciuto'});
+      }
+    }
+    
+    this.log('info', `Sincronizzazione automatica completata per ${results.length} appuntamenti`);
     return results;
   }
   

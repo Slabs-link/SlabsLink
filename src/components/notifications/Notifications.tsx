@@ -50,7 +50,6 @@ import axios from 'axios';
 import { styled } from '@mui/material/styles';
 import Sidebar from '../common/Sidebar';
 import { Template } from '../../types/template';
-import { getDatabase } from '../../../server/src/db/db-sqlite';
 
 // Interfaccia per le notifiche
 interface Notification {
