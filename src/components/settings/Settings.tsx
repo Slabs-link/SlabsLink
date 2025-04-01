@@ -9,6 +9,7 @@ import Sidebar from '../common/Sidebar';
 import { BackupSettings } from './BackupSettings';
 import { GoogleCalendarTestSettings } from './GoogleCalendarTestSettings';
 import { useLocation } from 'react-router-dom';
+import GoogleCalendarSelector from './GoogleCalendarSelector';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -85,6 +86,8 @@ const Settings: React.FC = () => {
     clientId: '',
     clientSecret: '',
     redirectUri: 'http://localhost:3000/auth/google/callback',
+    selectedCalendarId: '',
+    tokens: null,
     workingHours: {
       mondayStart: '09:00',
       mondayEnd: '18:00',
@@ -872,6 +875,26 @@ const Settings: React.FC = () => {
                       <li>Il server sia in esecuzione e raggiungibile</li>
                     </ul>
                   </Typography>
+                </Box>
+                
+                {/* Selettore del calendario Google */}
+                <Box sx={{ mt: 4 }}>
+                  <Typography variant="h6" gutterBottom>Selezione Calendario</Typography>
+                  <Typography variant="body2" paragraph>
+                    Seleziona il calendario Google da utilizzare per la sincronizzazione degli appuntamenti o crea un nuovo calendario dedicato.
+                  </Typography>
+                  
+                  {/* Importa il componente GoogleCalendarSelector */}
+                  <GoogleCalendarSelector
+                    selectedCalendarId={calendarSettings.selectedCalendarId || 'primary'}
+                    onCalendarSelect={(calendarId: string) => {
+                      setCalendarSettings({
+                        ...calendarSettings,
+                        selectedCalendarId: calendarId
+                      });
+                    }}
+                    disabled={!calendarSettings.googleCalendarEnabled || !calendarSettings.tokens}
+                  />
                 </Box>
               </TabPanel>
             )}

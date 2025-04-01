@@ -427,6 +427,27 @@ export const createAppointment = async (req: Request, res: Response) => {
         WHERE a.id = ?
       `).get(appointmentId);
       
+      // Sincronizza automaticamente con Google Calendar se abilitato
+      try {
+        // Calcola start_time e end_time per Google Calendar
+        const startDate = new Date(`${date}T${time}`);
+        const endDate = new Date(startDate.getTime() + duration * 60 * 1000);
+        
+        // Avvia la sincronizzazione in background
+        syncAppointmentWithGoogleCalendar(
+          Number(appointmentId),
+          notes || '',
+          startDate.toISOString(),
+          endDate.toISOString(),
+          newAppointment
+        ).catch(error => {
+          console.error('Error in background Google Calendar sync:', error);
+        });
+      } catch (syncError) {
+        console.error('Error preparing Google Calendar sync:', syncError);
+        // Non blocchiamo la risposta in caso di errore nella sincronizzazione
+      }
+      
       return res.status(201).json(newAppointment);
     } catch (error: any) {
       // Rollback transaction on error
@@ -447,7 +468,7 @@ export const createAppointment = async (req: Request, res: Response) => {
 }
 
 // Async function to handle Google Calendar sync
-export const syncAppointmentWithGoogleCalendar = async (appointmentId: number, notes: string, start_time: string, end_time: string, newAppointment: any) => {
+export const syncAppointmentWithGoogleCalendar = async (appointmentId: number, notes: string, start_time: string, end_time: string, appointmentData: any) => {
   const db = getDatabase();
   
   try {
@@ -458,15 +479,42 @@ export const syncAppointmentWithGoogleCalendar = async (appointmentId: number, n
       console.log(`Tentativo di sincronizzazione con Google Calendar per l'appuntamento ID: ${appointmentId}`);
       console.log(`Start time: ${start_time}, End time: ${end_time}`);
       
+      // Ottieni i dati completi dell'appuntamento se non sono già disponibili
+      let appointmentDetails = appointmentData;
+      if (!appointmentData.first_name || !appointmentData.last_name || !appointmentData.patient_name) {
+        appointmentDetails = db.prepare(`
+          SELECT a.*, u.first_name, u.last_name, u.first_name || ' ' || u.last_name as patient_name, a.title
+          FROM appointments a
+          JOIN users u ON a.patient_id = u.id
+          WHERE a.id = ?
+        `).get(appointmentId);
+      }
+      
+      // Assicurati che il titolo dell'appuntamento sia disponibile
+      const title = appointmentDetails.title || appointmentDetails.appointment_type_name || 'Appuntamento';
+      
+      // Assicurati che il nome del paziente sia disponibile
+      const patientName = appointmentDetails.patient_name || 
+                         (appointmentDetails.first_name && appointmentDetails.last_name ? 
+                          `${appointmentDetails.first_name} ${appointmentDetails.last_name}` : 
+                          'Paziente');
+      
       // Prepara l'appuntamento per la sincronizzazione
       const appointmentForSync = {
         id: Number(appointmentId),
-        patient_name: `${newAppointment.first_name} ${newAppointment.last_name}`,
+        title: title,
+        patient_name: patientName,
         start_time,
         end_time,
         notes: notes || '',
-        google_calendar_event_id: null
+        google_calendar_event_id: appointmentDetails.google_calendar_event_id || null
       };
+      
+      console.log('Dati per la sincronizzazione:', {
+        id: appointmentForSync.id,
+        title: appointmentForSync.title,
+        patient_name: appointmentForSync.patient_name
+      });
       
       // Sincronizza con Google Calendar
       const syncResult = await calendarService.syncAppointment(appointmentForSync);
@@ -499,7 +547,7 @@ export const syncAppointmentWithGoogleCalendar = async (appointmentId: number, n
       console.error('Error updating appointment with sync error:', updateError);
     }
   }
-  }
+}
 
 // Update appointment
 // Get appointments by patient ID
@@ -870,6 +918,27 @@ export const updateAppointment = async (req: Request, res: Response) => {
         LEFT JOIN appointment_types t ON a.appointment_type_id = t.id
         WHERE a.id = ?
       `).get(id);
+      
+      // Sincronizza automaticamente con Google Calendar se abilitato
+      try {
+        // Calcola start_time e end_time per Google Calendar
+        const startDate = new Date(`${finalDate}T${finalTime}`);
+        const endDate = new Date(startDate.getTime() + duration * 60 * 1000);
+        
+        // Avvia la sincronizzazione in background
+        syncAppointmentWithGoogleCalendar(
+          Number(id),
+          notes || '',
+          startDate.toISOString(),
+          endDate.toISOString(),
+          updatedAppointment
+        ).catch(error => {
+          console.error('Error in background Google Calendar sync during update:', error);
+        });
+      } catch (syncError) {
+        console.error('Error preparing Google Calendar sync during update:', syncError);
+        // Non blocchiamo la risposta in caso di errore nella sincronizzazione
+      }
       
       return res.json(updatedAppointment);
     } catch (error) {

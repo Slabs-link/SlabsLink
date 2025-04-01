@@ -1,6 +1,8 @@
 import express from 'express';
 import { Router, Request, Response } from 'express';
 import { getAuthUrl, handleAuthCallback, handleWebhook, setupWebhook, getCalendarEvents, syncAppointments, testSyncAppointment, checkIntegrationStatus } from '../controllers/google-calendar.controller';
+import { getAvailableCalendars, setSelectedCalendar } from '../controllers/google-calendar-management.controller';
+import { createCalendar } from '../controllers/google-calendar-create.controller';
 import { GoogleCalendarService } from '../services/google-calendar.service';
 import { Appointment } from '../interfaces/appointment.interface';
 import { calendar_v3 } from 'googleapis/build/src/apis/calendar/v3';
@@ -469,40 +471,11 @@ router.post('/webhook-setup', async (req, res) => {
 
 
 // Endpoint per ottenere la lista dei calendari disponibili
-router.get('/calendars', async (req: Request, res: Response) => {
-  try {
-    const calendarService = new GoogleCalendarService();
-    await calendarService.configure();
-    const calendars = await calendarService.getAvailableCalendars();
-    res.json({ calendars });
-  } catch (error: any) {
-    console.error('Errore durante il recupero dei calendari:', error);
-    res.status(500).json({ 
-      message: 'Errore durante il recupero dei calendari', 
-      error: error.message 
-    });
-  }
-});
+router.get('/calendars', getAvailableCalendars);
 
 // Endpoint per impostare il calendario selezionato
-router.post('/select-calendar', async (req: Request, res: Response) => {
-  try {
-    const { calendarId } = req.body;
-    if (!calendarId) {
-      return res.status(400).json({ message: 'ID calendario mancante' });
-    }
-    
-    const calendarService = new GoogleCalendarService();
-    await calendarService.configure();
-    await calendarService.setSelectedCalendar(calendarId);
-    
-    res.json({ message: 'Calendario selezionato con successo' });
-  } catch (error: any) {
-    console.error('Errore durante la selezione del calendario:', error);
-    res.status(500).json({ 
-      message: 'Errore durante la selezione del calendario', 
-      error: error.message 
-    });
-  }
-});
+router.post('/select-calendar', setSelectedCalendar);
+
+// Endpoint per creare un nuovo calendario
+router.post('/create-calendar', createCalendar);
 

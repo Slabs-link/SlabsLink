@@ -13,6 +13,14 @@ export class GoogleCalendarService {
   private calendar: calendar_v3.Calendar | null = null;
   private webhookUrl: string | null = null;
   private notificationChannel: string | null = '';
+  
+  /**
+   * Getter protetto per accedere al calendario
+   * Utilizzato dalle classi che estendono GoogleCalendarService
+   */
+  protected getCalendar(): calendar_v3.Calendar | null {
+    return this.calendar;
+  }
 
   constructor() {}
 
@@ -683,10 +691,15 @@ export class GoogleCalendarService {
       calendarId = settings.selectedCalendarId;
     }
 
+    // Assicuriamoci che il nome del paziente sia disponibile
+    const patientName = appointment.patient_name || 'Paziente';
+    
     // Formatta il titolo dell'evento includendo il titolo dell'appuntamento e il nome del paziente
     const eventTitle = appointment.title 
-      ? `${appointment.title}: ${appointment.patient_name}` 
-      : `Appuntamento: ${appointment.patient_name}`;
+      ? `${appointment.title}: ${patientName}` 
+      : `Appuntamento: ${patientName}`;
+      
+    this.log('info', `Creazione evento calendario con titolo: ${eventTitle}`);
       
     const event: calendar_v3.Schema$Event = {
       summary: eventTitle,
@@ -1144,24 +1157,69 @@ export class GoogleCalendarService {
 
   /**
    * Elimina un evento da Google Calendar
+   * @param eventId - ID dell'evento da eliminare
+   * @returns Promise<void>
    */
   async deleteCalendarEvent(eventId: string): Promise<void> {
+    this.log('info', `Tentativo di eliminazione evento Google Calendar con ID: ${eventId}`);
+    
     if (!this.calendar) {
+      this.log('info', 'Client Google Calendar non inizializzato, tentativo di configurazione');
       await this.configure();
     }
     
     if (!this.calendar) {
+      this.log('error', 'Google Calendar service non autenticato dopo tentativo di configurazione');
       throw new Error('Google Calendar service non autenticato');
     }
 
+    // Otteniamo le impostazioni del calendario
+    const settings = await this.getCalendarSettings();
+    // Usiamo il calendario primario come default
+    let calendarId = 'primary';
+    
+    // Se nelle impostazioni è specificato un calendario specifico, lo usiamo
+    if (settings?.selectedCalendarId) {
+      calendarId = settings.selectedCalendarId;
+    }
+
     try {
-      this.calendar.events.delete({
-        calendarId: 'primary',
+      // Prima verifichiamo se l'evento esiste
+      this.log('info', `Verifica esistenza evento con ID: ${eventId}`);
+      try {
+        await this.calendar.events.get({
+          calendarId: calendarId,
+          eventId: eventId
+        });
+        this.log('info', `Evento con ID ${eventId} trovato, procedo con l'eliminazione`);
+      } catch (getError: any) {
+        // Se l'evento non esiste (404), consideriamo l'operazione come completata con successo
+        if (getError?.response?.status === 404 || 
+            (getError?.errors && getError.errors[0]?.reason === 'notFound')) {
+          this.log('warn', `Evento con ID ${eventId} non trovato su Google Calendar, considerato già eliminato`);
+          return; // Usciamo dalla funzione senza errori
+        }
+        // Per altri errori, li logghiamo e continuiamo con il tentativo di eliminazione
+        this.log('warn', `Errore durante la verifica dell'esistenza dell'evento: ${getError?.message || 'Errore sconosciuto'}`);
+      }
+
+      // Procediamo con l'eliminazione
+      await this.calendar.events.delete({
+        calendarId: calendarId,
         eventId: eventId
       });
-    } catch (error) {
-      console.error('Errore durante l\'eliminazione dell\'evento da Google Calendar:', error);
-      throw error;
+      this.log('info', `Evento con ID ${eventId} eliminato con successo`);
+    } catch (error: any) {
+      // Gestione specifica per errore 404 (Not Found)
+      if (error?.response?.status === 404 || 
+          (error?.errors && error.errors[0]?.reason === 'notFound')) {
+        this.log('warn', `Evento con ID ${eventId} non trovato durante l'eliminazione, considerato già eliminato`);
+        return; // Usciamo dalla funzione senza errori
+      }
+      
+      // Per altri errori, li logghiamo e li propaghiamo
+      this.log('error', `Errore durante l'eliminazione dell'evento da Google Calendar:`, error);
+      throw new Error(`Errore durante l'eliminazione dell'evento: ${error?.message || 'Errore sconosciuto'}`);
     }
   }
 
