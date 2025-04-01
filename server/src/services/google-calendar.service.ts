@@ -636,6 +636,44 @@ export class GoogleCalendarService {
   /**
    * Crea un evento su Google Calendar
    */
+  /**
+   * Verifica se un calendario esiste e può essere utilizzato
+   * @param calendarId ID del calendario da verificare
+   * @returns true se il calendario esiste e può essere utilizzato, false altrimenti
+   */
+  private async verifyCalendarExists(calendarId: string): Promise<boolean> {
+    if (!this.calendar) return false;
+    
+    try {
+      this.log('info', `Verifica esistenza calendario con ID: ${calendarId}`);
+      
+      // Se è il calendario primario, assumiamo che esista sempre
+      if (calendarId === 'primary') {
+        this.log('info', 'Calendario primario selezionato, esistenza garantita');
+        return true;
+      }
+      
+      // Altrimenti, verifichiamo se il calendario esiste nella lista dei calendari disponibili
+      const response = await this.calendar.calendarList.get({
+        calendarId: calendarId
+      });
+      
+      this.log('info', `Calendario con ID ${calendarId} verificato con successo`);
+      return true;
+    } catch (error: any) {
+      // Se otteniamo un 404, il calendario non esiste
+      if (error?.response?.status === 404 || 
+          (error?.errors && error.errors[0]?.reason === 'notFound')) {
+        this.log('warn', `Calendario con ID ${calendarId} non trovato`);
+        return false;
+      }
+      
+      // Per altri errori, logghiamo e assumiamo che il calendario non sia utilizzabile
+      this.log('error', `Errore durante la verifica del calendario ${calendarId}:`, error);
+      return false;
+    }
+  }
+
   async createCalendarEvent(appointment: Appointment): Promise<string> {
     if (!this.calendar) throw new Error('Google Calendar service not authenticated');
 
@@ -685,10 +723,22 @@ export class GoogleCalendarService {
     const settings = await this.getCalendarSettings();
     // Usiamo il calendario primario come default
     let calendarId = 'primary';
+    let usingFallback = false;
     
     // Se nelle impostazioni è specificato un calendario specifico, lo usiamo
     if (settings?.selectedCalendarId) {
-      calendarId = settings.selectedCalendarId;
+      // Verifichiamo se il calendario selezionato esiste
+      const calendarExists = await this.verifyCalendarExists(settings.selectedCalendarId);
+      
+      if (calendarExists) {
+        calendarId = settings.selectedCalendarId;
+        this.log('info', `Utilizzo calendario selezionato con ID: ${calendarId}`);
+      } else {
+        // Se il calendario non esiste, utilizziamo il calendario primario come fallback
+        this.log('warn', `Calendario selezionato con ID: ${settings.selectedCalendarId} non trovato, utilizzo calendario primario come fallback`);
+        calendarId = 'primary';
+        usingFallback = true;
+      }
     }
 
     // Assicuriamoci che il nome del paziente sia disponibile
@@ -714,12 +764,72 @@ export class GoogleCalendarService {
       }
     };
 
-    const response = await this.calendar!.events.insert({
-      calendarId: calendarId,
-      requestBody: event
-    });
-    
-    return response.data.id || '';
+    try {
+      const response = await this.calendar!.events.insert({
+        calendarId: calendarId,
+        requestBody: event
+      });
+      
+      // Se abbiamo usato il fallback, aggiorniamo le impostazioni per evitare futuri errori
+      if (usingFallback && settings) {
+        try {
+          // Aggiorniamo le impostazioni per utilizzare il calendario primario
+          settings.selectedCalendarId = 'primary';
+          const jsonSettings = JSON.stringify(settings);
+          
+          this.db = getDatabase();
+          if (this.db) {
+            this.db.prepare('UPDATE app_settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?')
+              .run(jsonSettings, 'calendar');
+            this.log('info', 'Impostazioni del calendario aggiornate per utilizzare il calendario primario');
+          }
+        } catch (updateError) {
+          this.log('warn', 'Impossibile aggiornare le impostazioni del calendario', updateError);
+          // Non interrompiamo il flusso principale
+        }
+      }
+      
+      return response.data.id || '';
+    } catch (error: any) {
+      // Se otteniamo un 404, proviamo con il calendario primario se non lo stiamo già usando
+      if ((error?.response?.status === 404 || (error?.errors && error.errors[0]?.reason === 'notFound')) && calendarId !== 'primary') {
+        this.log('warn', `Errore 404 durante la creazione dell'evento nel calendario ${calendarId}, tentativo con calendario primario`);
+        
+        try {
+          const fallbackResponse = await this.calendar!.events.insert({
+            calendarId: 'primary',
+            requestBody: event
+          });
+          
+          // Aggiorniamo le impostazioni per utilizzare il calendario primario
+          if (settings) {
+            try {
+              settings.selectedCalendarId = 'primary';
+              const jsonSettings = JSON.stringify(settings);
+              
+              this.db = getDatabase();
+              if (this.db) {
+                this.db.prepare('UPDATE app_settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?')
+                  .run(jsonSettings, 'calendar');
+                this.log('info', 'Impostazioni del calendario aggiornate per utilizzare il calendario primario');
+              }
+            } catch (updateError) {
+              this.log('warn', 'Impossibile aggiornare le impostazioni del calendario', updateError);
+              // Non interrompiamo il flusso principale
+            }
+          }
+          
+          return fallbackResponse.data.id || '';
+        } catch (fallbackError) {
+          this.log('error', 'Errore anche durante il tentativo con calendario primario', fallbackError);
+          throw fallbackError;
+        }
+      }
+      
+      // Per altri errori, li logghiamo e li propaghiamo
+      this.log('error', 'Errore durante la creazione dell\'evento su Google Calendar', error);
+      throw error;
+    }
   }
 
   private async updateCalendarEvent(appointment: Appointment): Promise<void> {
@@ -746,10 +856,22 @@ export class GoogleCalendarService {
     const settings = await this.getCalendarSettings();
     // Usiamo il calendario primario come default
     let calendarId = 'primary';
+    let usingFallback = false;
     
     // Se nelle impostazioni è specificato un calendario specifico, lo usiamo
     if (settings?.selectedCalendarId) {
-      calendarId = settings.selectedCalendarId;
+      // Verifichiamo se il calendario selezionato esiste
+      const calendarExists = await this.verifyCalendarExists(settings.selectedCalendarId);
+      
+      if (calendarExists) {
+        calendarId = settings.selectedCalendarId;
+        this.log('info', `Utilizzo calendario selezionato con ID: ${calendarId}`);
+      } else {
+        // Se il calendario non esiste, utilizziamo il calendario primario come fallback
+        this.log('warn', `Calendario selezionato con ID: ${settings.selectedCalendarId} non trovato, utilizzo calendario primario come fallback`);
+        calendarId = 'primary';
+        usingFallback = true;
+      }
     }
 
     // Formatta il titolo dell'evento includendo il titolo dell'appuntamento e il nome del paziente
@@ -770,11 +892,70 @@ export class GoogleCalendarService {
       }
     };
 
-    await this.calendar.events.update({
-      calendarId: calendarId,
-      eventId: appointment.google_calendar_event_id,
-      requestBody: event
-    });
+    try {
+      await this.calendar.events.update({
+        calendarId: calendarId,
+        eventId: appointment.google_calendar_event_id,
+        requestBody: event
+      });
+      
+      // Se abbiamo usato il fallback, aggiorniamo le impostazioni per evitare futuri errori
+      if (usingFallback && settings) {
+        try {
+          // Aggiorniamo le impostazioni per utilizzare il calendario primario
+          settings.selectedCalendarId = 'primary';
+          const jsonSettings = JSON.stringify(settings);
+          
+          this.db = getDatabase();
+          if (this.db) {
+            this.db.prepare('UPDATE app_settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?')
+              .run(jsonSettings, 'calendar');
+            this.log('info', 'Impostazioni del calendario aggiornate per utilizzare il calendario primario');
+          }
+        } catch (updateError) {
+          this.log('warn', 'Impossibile aggiornare le impostazioni del calendario', updateError);
+          // Non interrompiamo il flusso principale
+        }
+      }
+    } catch (error: any) {
+      // Se otteniamo un 404, proviamo con il calendario primario se non lo stiamo già usando
+      if ((error?.response?.status === 404 || (error?.errors && error.errors[0]?.reason === 'notFound')) && calendarId !== 'primary') {
+        this.log('warn', `Errore 404 durante l'aggiornamento dell'evento nel calendario ${calendarId}, tentativo con calendario primario`);
+        
+        try {
+          await this.calendar.events.update({
+            calendarId: 'primary',
+            eventId: appointment.google_calendar_event_id,
+            requestBody: event
+          });
+          
+          // Aggiorniamo le impostazioni per utilizzare il calendario primario
+          if (settings) {
+            try {
+              settings.selectedCalendarId = 'primary';
+              const jsonSettings = JSON.stringify(settings);
+              
+              this.db = getDatabase();
+              if (this.db) {
+                this.db.prepare('UPDATE app_settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?')
+                  .run(jsonSettings, 'calendar');
+                this.log('info', 'Impostazioni del calendario aggiornate per utilizzare il calendario primario');
+              }
+            } catch (updateError) {
+              this.log('warn', 'Impossibile aggiornare le impostazioni del calendario', updateError);
+              // Non interrompiamo il flusso principale
+            }
+          }
+        } catch (fallbackError) {
+          this.log('error', 'Errore anche durante il tentativo con calendario primario', fallbackError);
+          throw fallbackError;
+        }
+      } else {
+        // Per altri errori, li logghiamo e li propaghiamo
+        this.log('error', 'Errore durante l\'aggiornamento dell\'evento su Google Calendar', error);
+        throw error;
+      }
+    }
   }
 
   async syncAppointment(appointment: Appointment): Promise<{ id: string }> {
@@ -1177,10 +1358,22 @@ export class GoogleCalendarService {
     const settings = await this.getCalendarSettings();
     // Usiamo il calendario primario come default
     let calendarId = 'primary';
+    let usingFallback = false;
     
     // Se nelle impostazioni è specificato un calendario specifico, lo usiamo
     if (settings?.selectedCalendarId) {
-      calendarId = settings.selectedCalendarId;
+      // Verifichiamo se il calendario selezionato esiste
+      const calendarExists = await this.verifyCalendarExists(settings.selectedCalendarId);
+      
+      if (calendarExists) {
+        calendarId = settings.selectedCalendarId;
+        this.log('info', `Utilizzo calendario selezionato con ID: ${calendarId}`);
+      } else {
+        // Se il calendario non esiste, utilizziamo il calendario primario come fallback
+        this.log('warn', `Calendario selezionato con ID: ${settings.selectedCalendarId} non trovato, utilizzo calendario primario come fallback`);
+        calendarId = 'primary';
+        usingFallback = true;
+      }
     }
 
     try {
@@ -1193,9 +1386,34 @@ export class GoogleCalendarService {
         });
         this.log('info', `Evento con ID ${eventId} trovato, procedo con l'eliminazione`);
       } catch (getError: any) {
-        // Se l'evento non esiste (404), consideriamo l'operazione come completata con successo
-        if (getError?.response?.status === 404 || 
-            (getError?.errors && getError.errors[0]?.reason === 'notFound')) {
+        // Se l'evento non esiste (404) e non stiamo usando il calendario primario, proviamo con quello
+        if ((getError?.response?.status === 404 || 
+            (getError?.errors && getError.errors[0]?.reason === 'notFound')) && 
+            calendarId !== 'primary') {
+          
+          this.log('warn', `Evento con ID ${eventId} non trovato nel calendario ${calendarId}, tentativo con calendario primario`);
+          
+          try {
+            await this.calendar.events.get({
+              calendarId: 'primary',
+              eventId: eventId
+            });
+            this.log('info', `Evento con ID ${eventId} trovato nel calendario primario, procedo con l'eliminazione`);
+            calendarId = 'primary';
+            usingFallback = true;
+          } catch (primaryGetError: any) {
+            // Se l'evento non esiste neanche nel calendario primario, consideriamo l'operazione come completata
+            if (primaryGetError?.response?.status === 404 || 
+                (primaryGetError?.errors && primaryGetError.errors[0]?.reason === 'notFound')) {
+              this.log('warn', `Evento con ID ${eventId} non trovato in nessun calendario, considerato già eliminato`);
+              return; // Usciamo dalla funzione senza errori
+            }
+            // Per altri errori, li logghiamo e continuiamo con il tentativo di eliminazione
+            this.log('warn', `Errore durante la verifica dell'esistenza dell'evento nel calendario primario: ${primaryGetError?.message || 'Errore sconosciuto'}`);
+          }
+        } else if (getError?.response?.status === 404 || 
+                   (getError?.errors && getError.errors[0]?.reason === 'notFound')) {
+          // Se l'evento non esiste e stiamo già usando il calendario primario, consideriamo l'operazione come completata
           this.log('warn', `Evento con ID ${eventId} non trovato su Google Calendar, considerato già eliminato`);
           return; // Usciamo dalla funzione senza errori
         }
@@ -1209,10 +1427,73 @@ export class GoogleCalendarService {
         eventId: eventId
       });
       this.log('info', `Evento con ID ${eventId} eliminato con successo`);
+      
+      // Se abbiamo usato il fallback, aggiorniamo le impostazioni per evitare futuri errori
+      if (usingFallback && settings) {
+        try {
+          // Aggiorniamo le impostazioni per utilizzare il calendario primario
+          settings.selectedCalendarId = 'primary';
+          const jsonSettings = JSON.stringify(settings);
+          
+          this.db = getDatabase();
+          if (this.db) {
+            this.db.prepare('UPDATE app_settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?')
+              .run(jsonSettings, 'calendar');
+            this.log('info', 'Impostazioni del calendario aggiornate per utilizzare il calendario primario');
+          }
+        } catch (updateError) {
+          this.log('warn', 'Impossibile aggiornare le impostazioni del calendario', updateError);
+          // Non interrompiamo il flusso principale
+        }
+      }
     } catch (error: any) {
-      // Gestione specifica per errore 404 (Not Found)
-      if (error?.response?.status === 404 || 
-          (error?.errors && error.errors[0]?.reason === 'notFound')) {
+      // Gestione specifica per errore 404 (Not Found) se non stiamo già usando il calendario primario
+      if ((error?.response?.status === 404 || 
+          (error?.errors && error.errors[0]?.reason === 'notFound')) && 
+          calendarId !== 'primary') {
+        
+        this.log('warn', `Errore 404 durante l'eliminazione dell'evento nel calendario ${calendarId}, tentativo con calendario primario`);
+        
+        try {
+          await this.calendar.events.delete({
+            calendarId: 'primary',
+            eventId: eventId
+          });
+          this.log('info', `Evento con ID ${eventId} eliminato con successo dal calendario primario`);
+          
+          // Aggiorniamo le impostazioni per utilizzare il calendario primario
+          if (settings) {
+            try {
+              settings.selectedCalendarId = 'primary';
+              const jsonSettings = JSON.stringify(settings);
+              
+              this.db = getDatabase();
+              if (this.db) {
+                this.db.prepare('UPDATE app_settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?')
+                  .run(jsonSettings, 'calendar');
+                this.log('info', 'Impostazioni del calendario aggiornate per utilizzare il calendario primario');
+              }
+            } catch (updateError) {
+              this.log('warn', 'Impossibile aggiornare le impostazioni del calendario', updateError);
+              // Non interrompiamo il flusso principale
+            }
+          }
+          
+          return; // Operazione completata con successo
+        } catch (fallbackError: any) {
+          // Se anche questo fallisce con 404, consideriamo l'evento come già eliminato
+          if (fallbackError?.response?.status === 404 || 
+              (fallbackError?.errors && fallbackError.errors[0]?.reason === 'notFound')) {
+            this.log('warn', `Evento con ID ${eventId} non trovato durante l'eliminazione dal calendario primario, considerato già eliminato`);
+            return; // Usciamo dalla funzione senza errori
+          }
+          
+          this.log('error', 'Errore anche durante il tentativo con calendario primario', fallbackError);
+          throw fallbackError;
+        }
+      } else if (error?.response?.status === 404 || 
+                 (error?.errors && error.errors[0]?.reason === 'notFound')) {
+        // Se stiamo già usando il calendario primario e otteniamo 404, consideriamo l'evento come già eliminato
         this.log('warn', `Evento con ID ${eventId} non trovato durante l'eliminazione, considerato già eliminato`);
         return; // Usciamo dalla funzione senza errori
       }

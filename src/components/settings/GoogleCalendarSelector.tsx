@@ -74,9 +74,25 @@ const GoogleCalendarSelector: React.FC<GoogleCalendarSelectorProps> = ({
   }, [disabled]);
 
   // Gestisce la selezione di un calendario
-  const handleCalendarChange = (event: SelectChangeEvent<string>, child: React.ReactNode) => {
+  const handleCalendarChange = async (event: SelectChangeEvent<string>, child: React.ReactNode) => {
     const calendarId = event.target.value;
     onCalendarSelect(calendarId);
+    
+    // Invia la selezione al server
+    try {
+      setLoading(true);
+      const response = await axios.post(`${API_BASE_URL}/google-calendar/select-calendar`, { calendarId });
+      if (response.data.success) {
+        console.log('Calendario selezionato salvato con successo sul server');
+      } else {
+        setError(response.data.message || 'Errore durante il salvataggio della selezione del calendario');
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Errore durante il salvataggio della selezione del calendario');
+      console.error('Errore durante il salvataggio della selezione del calendario:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Apre il dialog per creare un nuovo calendario

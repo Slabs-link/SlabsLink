@@ -741,7 +741,18 @@ export const deleteAppointment = async (req: Request, res: Response) => {
     if (appointment.google_calendar_event_id) {
       try {
         const googleCalendarService = new GoogleCalendarService();
-        await googleCalendarService.deleteCalendarEvent(appointment.google_calendar_event_id);
+        
+        // Verifica che il servizio sia abilitato e autenticato prima di procedere
+        if (await googleCalendarService.isServiceEnabled() && await googleCalendarService.isServiceAuthenticated()) {
+          // Configura il servizio prima di utilizzarlo
+          await googleCalendarService.configure();
+          
+          console.log(`Tentativo di eliminazione evento Google Calendar con ID: ${appointment.google_calendar_event_id}`);
+          await googleCalendarService.deleteCalendarEvent(appointment.google_calendar_event_id);
+          console.log(`Evento Google Calendar eliminato con successo`);
+        } else {
+          console.warn('Servizio Google Calendar non abilitato o non autenticato, impossibile eliminare l\'evento');
+        }
       } catch (error) {
         console.error('Errore durante l\'eliminazione dell\'evento da Google Calendar:', error);
         // Continua comunque con l'eliminazione dell'appuntamento
