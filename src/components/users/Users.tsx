@@ -4,14 +4,7 @@ import {
   Typography, 
   Button, 
   Paper, 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableContainer, 
-  TableHead, 
-  TableRow,
   Dialog,
-  IconButton,
   InputAdornment,
   TextField,
   Snackbar,
@@ -27,14 +20,14 @@ import {
   FormControl,
   InputLabel,
   Select,
-  MenuItem
+  MenuItem,
+  Container,
+  CircularProgress
 } from '@mui/material';
 import { 
   Add as AddIcon, 
   Search as SearchIcon, 
-  Edit as EditIcon, 
-  Delete as DeleteIcon, 
-  Visibility as VisibilityIcon,
+  FilterAlt as FilterIcon,
   Person as PersonIcon,
   Email as EmailIcon,
   Phone as PhoneIcon,
@@ -52,6 +45,8 @@ import { it } from 'date-fns/locale';
 // Import the User type from UserForm
 import UserForm, { User } from './UserForm';
 import Sidebar from '../common/Sidebar';
+import UsersCard from './UsersCard';
+import { styled } from '@mui/material/styles';
 
 // Remove duplicate User type definition and use the imported one
 
@@ -105,6 +100,29 @@ const MOCK_USERS: UserInput[] = [
 ];
 
 const API_BASE_URL = 'http://localhost:3001/api';
+
+// Componenti styled per migliorare il layout
+const SectionTitle = styled(Typography)(({ theme }) => ({
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  fontWeight: 'bold',
+  marginBottom: theme.spacing(2)
+}));
+
+const UsersList = styled(Box)(({ theme }) => ({
+  overflowY: 'auto',
+  maxHeight: '70vh'
+}));
+
+const FilterContainer = styled(Paper)(({ theme }) => ({
+  padding: theme.spacing(2),
+  marginBottom: theme.spacing(3),
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: theme.spacing(2),
+  alignItems: 'center'
+}));
 
 // Interface for TabPanel props
 interface TabPanelProps {
@@ -168,13 +186,20 @@ const Users = () => {
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'info' });
   // State for the tab panel
   const [tabValue, setTabValue] = useState(0);
-  // Rimosso stato per gli appuntamenti utente
+  // Stato per i filtri
+  const [filters, setFilters] = useState({
+    searchTerm: '',
+    gender: 'all'
+  });
+  // Stato per il caricamento
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchUsers();
   }, []);
 
   const fetchUsers = async () => {
+    setLoading(true);
     try {
       const response = await axios.get(`${API_BASE_URL}/users`);
       if (response.data && Array.isArray(response.data)) {
@@ -188,6 +213,13 @@ const Users = () => {
     } catch (error) {
       console.error('Error fetching users:', error);
       // We're already using mock data, so no need to set it again
+      setNotification({
+        open: true,
+        message: 'Errore nel caricamento degli utenti',
+        severity: 'error'
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -322,83 +354,140 @@ const Users = () => {
     setNotification({ ...notification, open: false });
   };
 
-  const filteredUsers = users.filter(user => 
-    user.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.email?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Funzione per applicare i filtri
+  const applyFilters = () => {
+    let result = [...users];
+    
+    // Filtra per termine di ricerca
+    if (filters.searchTerm.trim() !== '') {
+      const searchTerm = filters.searchTerm.toLowerCase().trim();
+      result = result.filter(user => {
+        return (
+          user.first_name?.toLowerCase().includes(searchTerm) ||
+          user.last_name?.toLowerCase().includes(searchTerm) ||
+          user.email?.toLowerCase().includes(searchTerm) ||
+          user.phone?.toLowerCase().includes(searchTerm) ||
+          user.fiscal_code?.toLowerCase().includes(searchTerm)
+        );
+      });
+    }
+    
+    // Filtra per genere
+    if (filters.gender !== 'all') {
+      result = result.filter(user => user.gender === filters.gender);
+    }
+    
+    return result;
+  };
+  
+  // Ottieni gli utenti filtrati
+  const filteredUsers = applyFilters();
+  
+  // Gestione del cambio dei filtri
+  const handleFilterChange = (field: string, value: any) => {
+    setFilters(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+  
+  // Funzione per resettare i filtri
+  const resetFilters = () => {
+    setFilters({
+      searchTerm: '',
+      gender: 'all'
+    });
+  };
 
   return (
     <Box sx={{ display: 'flex', bgcolor: '#fafafa', minHeight: '100vh' }}>
       <Sidebar />
       
       <Box sx={{ flexGrow: 1, p: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Typography variant="h4">Utenti</Typography>
-          <Button 
-            variant="contained" 
-            color="primary" 
-            startIcon={<AddIcon />}
-            onClick={() => handleOpenDialog(undefined)}
-          >
-            AGGIUNGI UTENTE
-          </Button>
-        </Box>
-        
-        <Box sx={{ mb: 3 }}>
-          <TextField
-            fullWidth
-            placeholder="Cerca utenti..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon />
-                </InputAdornment>
-              ),
-            }}
-          />
-        </Box>
-        
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Nome</TableCell>
-                <TableCell>Cognome</TableCell>
-                <TableCell>Email</TableCell>
-                <TableCell>Telefono</TableCell>
-                <TableCell>Data di Nascita</TableCell>
-                <TableCell>Azioni</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {filteredUsers.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell>{user.first_name}</TableCell>
-                  <TableCell>{user.last_name}</TableCell>
-                  <TableCell>{user.email}</TableCell>
-                  <TableCell>{user.phone}</TableCell>
-                  <TableCell>
-                    {user.birth_date ? format(new Date(user.birth_date), 'dd/MM/yyyy', { locale: it }) : ''}
-                  </TableCell>
-                  <TableCell>
-                    <IconButton onClick={() => handleOpenViewDialog(user)} color="info" title="Visualizza">
-                      <VisibilityIcon />
-                    </IconButton>
-                    <IconButton onClick={() => handleOpenDialog(user)} color="primary" title="Modifica">
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton onClick={() => handleDeleteUser(user.id)} color="error" title="Elimina">
-                      <DeleteIcon />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
+        <Container maxWidth="xl">
+          {/* Header */}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+            <SectionTitle variant="h4">Gestione Utenti</SectionTitle>
+            
+            <Button 
+              variant="contained" 
+              color="primary" 
+              startIcon={<AddIcon />}
+              onClick={() => handleOpenDialog(undefined)}
+              sx={{ whiteSpace: 'nowrap' }}
+            >
+              Nuovo Utente
+            </Button>
+          </Box>
+          
+          {/* Filtri */}
+          <FilterContainer>
+            <TextField
+              label="Cerca utenti"
+              variant="outlined"
+              size="small"
+              value={filters.searchTerm}
+              onChange={(e) => handleFilterChange('searchTerm', e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon fontSize="small" />
+                  </InputAdornment>
+                ),
+              }}
+              sx={{ flexGrow: 1, minWidth: '200px' }}
+            />
+            
+            <FormControl size="small" sx={{ minWidth: '150px' }}>
+              <InputLabel id="gender-filter-label">Genere</InputLabel>
+              <Select
+                labelId="gender-filter-label"
+                value={filters.gender}
+                label="Genere"
+                onChange={(e) => handleFilterChange('gender', e.target.value)}
+              >
+                <MenuItem value="all">Tutti</MenuItem>
+                <MenuItem value="Maschio">Maschio</MenuItem>
+                <MenuItem value="Femmina">Femmina</MenuItem>
+                <MenuItem value="Altro">Altro</MenuItem>
+              </Select>
+            </FormControl>
+            
+            <Button
+              variant="outlined"
+              startIcon={<FilterIcon />}
+              onClick={resetFilters}
+              sx={{ whiteSpace: 'nowrap' }}
+            >
+              Reset Filtri
+            </Button>
+          </FilterContainer>
+          
+          {/* Lista Utenti */}
+          <UsersList>
+            {loading ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+                <CircularProgress />
+              </Box>
+            ) : filteredUsers.length > 0 ? (
+              <UsersCard 
+                users={filteredUsers} 
+                onView={handleOpenViewDialog} 
+                onEdit={handleOpenDialog} 
+                onDelete={handleDeleteUser} 
+              />
+            ) : (
+              <Box sx={{ textAlign: 'center', p: 4 }}>
+                <Typography variant="h6" color="text.secondary">
+                  Nessun utente trovato
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Prova a modificare i filtri o crea un nuovo utente
+                </Typography>
+              </Box>
+            )}
+          </UsersList>
+        </Container>
         
         {/* Edit User Dialog */}
         <Dialog 
