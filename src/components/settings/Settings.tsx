@@ -10,6 +10,7 @@ import { BackupSettings } from './BackupSettings';
 import { GoogleCalendarTestSettings } from './GoogleCalendarTestSettings';
 import { useLocation } from 'react-router-dom';
 import GoogleCalendarSelector from './GoogleCalendarSelector';
+import FileFolderPicker from '../common/FileFolderPicker';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -77,7 +78,11 @@ const Settings: React.FC = () => {
     browserPath: '',
     dataPath: '',
     autoReply: false,
-    autoReplyMessage: ''
+    autoReplyMessage: '',
+    // Nuovi campi per WhatsApp Business API
+    useBusinessApi: false,
+    apiToken: '',
+    phoneNumberId: ''
   });
   
   // Google Calendar settings state
@@ -686,30 +691,122 @@ const Settings: React.FC = () => {
                   sx={{ mb: 2 }}
                 />
                 
-                <Grid container spacing={3}>
-                  <Grid item xs={12} md={6}>
-                    <TextField
-                      fullWidth
-                      label="Percorso Browser Chrome"
-                      name="browserPath"
-                      value={whatsappSettings.browserPath}
-                      onChange={handleWhatsappSettingsChange}
-                      margin="normal"
-                      disabled={!whatsappSettings.enabled}
-                    />
-                  </Grid>
-                  <Grid item xs={12} md={6}>
-                    <TextField
-                      fullWidth
-                      label="Percorso Dati WhatsApp"
-                      name="dataPath"
-                      value={whatsappSettings.dataPath}
-                      onChange={handleWhatsappSettingsChange}
-                      margin="normal"
-                      disabled={!whatsappSettings.enabled}
-                    />
-                  </Grid>
-                </Grid>
+                <Paper sx={{ p: 3, mb: 3 }}>
+                  <Typography variant="subtitle1" fontWeight="bold" gutterBottom>Metodo di integrazione</Typography>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={whatsappSettings.useBusinessApi}
+                        onChange={handleWhatsappSettingsChange}
+                        name="useBusinessApi"
+                        disabled={!whatsappSettings.enabled}
+                      />
+                    }
+                    label="Usa WhatsApp Business API (consigliato)"
+                    sx={{ mb: 2 }}
+                  />
+                  
+                  {whatsappSettings.useBusinessApi ? (
+                    <>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                        Utilizza l'API ufficiale di WhatsApp Business per inviare messaggi senza necessità di browser.
+                      </Typography>
+                      
+                      <Grid container spacing={3}>
+                        <Grid item xs={12} md={6}>
+                          <TextField
+                            fullWidth
+                            label="Token API WhatsApp"
+                            name="apiToken"
+                            value={whatsappSettings.apiToken}
+                            onChange={handleWhatsappSettingsChange}
+                            margin="normal"
+                            disabled={!whatsappSettings.enabled || !whatsappSettings.useBusinessApi}
+                          />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                          <TextField
+                            fullWidth
+                            label="ID Numero di Telefono"
+                            name="phoneNumberId"
+                            value={whatsappSettings.phoneNumberId}
+                            onChange={handleWhatsappSettingsChange}
+                            margin="normal"
+                            disabled={!whatsappSettings.enabled || !whatsappSettings.useBusinessApi}
+                          />
+                        </Grid>
+                        <Grid item xs={12}>
+                          <Button
+                            variant="outlined"
+                            color="primary"
+                            disabled={!whatsappSettings.enabled || !whatsappSettings.useBusinessApi || !whatsappSettings.apiToken || !whatsappSettings.phoneNumberId}
+                            sx={{ mt: 1 }}
+                          >
+                            Testa Connessione API
+                          </Button>
+                        </Grid>
+                      </Grid>
+                    </>
+                  ) : (
+                    <>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                        Utilizza WhatsApp Web tramite browser automatizzato (richiede Chrome installato).
+                      </Typography>
+                      
+                      <Grid container spacing={3}>
+                        <Grid item xs={12} md={6}>
+                          <FileFolderPicker
+                            label="Percorso Browser Chrome"
+                            value={whatsappSettings.browserPath}
+                            onChange={(value) => setWhatsappSettings({...whatsappSettings, browserPath: value})}
+                            placeholder="C:\Program Files\Google\Chrome\Application\chrome.exe"
+                            accept=".exe"
+                            disabled={!whatsappSettings.enabled || whatsappSettings.useBusinessApi}
+                          />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                          <FileFolderPicker
+                            label="Percorso Dati WhatsApp"
+                            value={whatsappSettings.dataPath}
+                            onChange={(value) => setWhatsappSettings({...whatsappSettings, dataPath: value})}
+                            placeholder="C:\WhatsAppData"
+                            isFolder={true}
+                            disabled={!whatsappSettings.enabled || whatsappSettings.useBusinessApi}
+                          />
+                        </Grid>
+                      </Grid>
+                    </>
+                  )}
+                </Paper>
+                
+                <Paper sx={{ p: 3 }}>
+                  <Typography variant="subtitle1" fontWeight="bold" gutterBottom>Opzioni messaggi</Typography>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={whatsappSettings.autoReply}
+                        onChange={handleWhatsappSettingsChange}
+                        name="autoReply"
+                        disabled={!whatsappSettings.enabled}
+                      />
+                    }
+                    label="Abilita risposta automatica"
+                    sx={{ mb: 2 }}
+                  />
+                  
+                  <TextField
+                    fullWidth
+                    label="Messaggio di risposta automatica"
+                    name="autoReplyMessage"
+                    value={whatsappSettings.autoReplyMessage}
+                    onChange={handleWhatsappSettingsChange}
+                    margin="normal"
+                    multiline
+                    rows={4}
+                    disabled={!whatsappSettings.enabled || !whatsappSettings.autoReply}
+                    placeholder="Grazie per il tuo messaggio. Ti risponderemo al più presto."
+                  />
+                </Paper>
               </TabPanel>
             )}
             
