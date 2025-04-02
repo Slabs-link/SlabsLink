@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, Container, Grid, Paper, Avatar, Button, Card, CardContent, Badge, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Divider, TextField, Tabs, Tab, TableContainer, Table, TableHead, TableRow, TableCell, TableBody, FormControl, InputLabel, Select, MenuItem } from '@mui/material';
+import { Box, Typography, Container, Grid, Paper, Avatar, Button, Card, CardContent, Badge, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Divider, TextField, Tabs, Tab, TableContainer, Table, TableHead, TableRow, TableCell, TableBody, FormControl, InputLabel, Select, MenuItem, Chip } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import PersonIcon from '@mui/icons-material/Person';
@@ -24,6 +24,7 @@ import CakeIcon from '@mui/icons-material/Cake';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import NoteIcon from '@mui/icons-material/Note';
+import AccessTime from '@mui/icons-material/AccessTime';
 
 // Styled components
 const SidebarContainer = styled(Box)(({ theme }) => ({
@@ -55,7 +56,9 @@ const ContentCard = styled(Paper)(({ theme }) => ({
   padding: theme.spacing(3),
   borderRadius: theme.shape.borderRadius,
   boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-  height: '100%'
+  height: '100%',
+  display: 'flex',
+  flexDirection: 'column'
 }));
 
 const AppointmentItem = styled(Box)(({ theme }) => ({
@@ -66,6 +69,32 @@ const AppointmentItem = styled(Box)(({ theme }) => ({
   '&:last-child': {
     borderBottom: 'none'
   }
+}));
+
+const SectionTitle = styled(Typography)(({ theme }) => ({
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  fontWeight: 'bold',
+  marginBottom: theme.spacing(2)
+}));
+
+const AppointmentsList = styled(Box)(({ theme }) => ({
+  overflowY: 'auto',
+  maxHeight: '300px',
+  flex: 1
+}));
+
+const PatientsList = styled(Box)(({ theme }) => ({
+  overflowY: 'auto',
+  maxHeight: '300px',
+  flex: 1
+}));
+
+const CalendarContainer = styled(Box)(({ theme }) => ({
+  overflowY: 'auto',
+  maxHeight: '400px',
+  flex: 1
 }));
 
 // All'interno del componente Dashboard
@@ -90,6 +119,7 @@ const Dashboard: React.FC = () => {
     first_name?: string;
     last_name?: string;
     appointment_date: string;
+    date?: string; // Aggiunto per retrocompatibilità
     appointment_time?: string;
     status?: string;
     notes?: string;
@@ -456,8 +486,6 @@ const Dashboard: React.FC = () => {
                     </Grid>
                   </Grid>
                 </TabPanel>
-                
-                {/* La scheda Appuntamenti è stata rimossa */}
               </Grid>
             </Grid>
           )}
@@ -505,7 +533,7 @@ const Dashboard: React.FC = () => {
                     <NoteIcon sx={{ mr: 1, verticalAlign: 'middle', color: 'primary.main' }} />
                     Note
                   </Typography>
-                  <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+                  <Paper variant="outlined" sx={{ p: 2 }}>
                     <Typography variant="body1">
                       {selectedAppointment.notes || 'Nessuna nota disponibile'}
                     </Typography>
@@ -521,234 +549,296 @@ const Dashboard: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
-      
-        <Container maxWidth="xl">
-          {/* Header - removed the three buttons */}
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
-            <Typography variant="h4" fontWeight="bold">Dashboard</Typography>
-          </Box>
-          
-          {/* Metrics - Adjusted to display all 4 cards in a single row */}
-          <Grid container spacing={3} sx={{ mb: 3 }}>
-            {metrics.map((metric, index) => (
-              <Grid item xs={12} sm={6} md={3} key={index}>
-                <Card sx={{ bgcolor: 'white' }}>
-                  <CardContent sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Avatar sx={{ bgcolor: metric.color + '15', color: metric.color, mr: 2 }}>
-                      {metric.icon}
-                    </Avatar>
-                    <Box>
-                      <Typography variant="h5" fontWeight="bold">{metric.value}</Typography>
-                      <Typography variant="body2" color="text.secondary">{metric.title}</Typography>
-                    </Box>
-                  </CardContent>
-                </Card>
-              </Grid>
-            ))}
-          </Grid>
 
-
-
-          {/* Content */}
-          <Grid container spacing={3}>
-            {/* First row: Monthly Calendar, Today's Appointments and Upcoming Appointments side by side */}
-            <Grid item xs={12} md={6}>
-              <ContentCard>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                  <Typography variant="h6" fontWeight="bold">Calendario Mensile</Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <IconButton onClick={handlePrevMonth}>
-                      <ArrowBackIosNewIcon fontSize="small" />
-                    </IconButton>
-                    <Typography variant="subtitle1" sx={{ mx: 2 }}>
-                      {format(currentMonth, 'MMMM yyyy', { locale: it })}
-                    </Typography>
-                    <IconButton onClick={handleNextMonth}>
-                      <ArrowForwardIosIcon fontSize="small" />
-                    </IconButton>
-                  </Box>
-                </Box>
-                
-                <Grid container spacing={1}>
-                  {/* Day names */}
-                  {['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'].map((day) => (
-                    <Grid item xs={12/7} key={day}>
-                      <Box sx={{ textAlign: 'center', py: 1, fontWeight: 'bold' }}>
-                        <Typography variant="body2">{day}</Typography>
+          <Container maxWidth="xl">
+            {/* Header - removed the three buttons */}
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+              <Typography variant="h4" fontWeight="bold">Dashboard</Typography>
+            </Box>
+            
+            {/* Metrics */}
+            <Grid container spacing={3} sx={{ mb: 4 }}>
+              {metrics.map((metric, index) => (
+                <Grid item xs={12} sm={6} md={3} key={index}>
+                  <ContentCard>
+                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                      <Avatar sx={{ bgcolor: metric.color + '15', color: metric.color, mr: 2 }}>
+                        {metric.icon}
+                      </Avatar>
+                      <Box>
+                        <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
+                          {metric.title}
+                        </Typography>
+                        <Typography variant="h5" fontWeight="bold">
+                          {metric.value}
+                        </Typography>
                       </Box>
-                    </Grid>
-                  ))}
-                  
-                  {/* Calendar days */}
-                  {eachDayOfInterval({
-                    start: startOfMonth(currentMonth),
-                    end: endOfMonth(currentMonth)
-                  }).map((day, index) => {
-                    const dateStr = format(day, 'yyyy-MM-dd');
-                    const appointmentsForDay = appointmentsByDate[dateStr] || [];
-                    const isCurrentMonth = isSameMonth(day, currentMonth);
-                    
-                    return (
-                      <Grid item xs={12/7} key={index}>
-                        <Box sx={{
-                          height: 50,
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          p: 1,
-                          borderRadius: 1,
-                          bgcolor: isCurrentMonth ? '#fff' : '#f5f5f5',
-                          border: '1px solid #eee',
-                          position: 'relative'
-                        }}>
-                          <Typography 
-                            variant="body2" 
-                            sx={{ 
-                              color: isCurrentMonth ? 'text.primary' : 'text.disabled',
-                              fontWeight: isCurrentMonth ? 'medium' : 'normal'
-                            }}
-                          >
-                            {getDate(day)}
-                          </Typography>
-                          
-                          {appointmentsForDay.length > 0 && (
-                            <Badge 
-                              badgeContent={appointmentsForDay.length} 
-                              color="primary"
-                              sx={{ 
-                                position: 'absolute',
-                                top: 2,
-                                right: 2,
-                                '& .MuiBadge-badge': {
-                                  fontSize: '0.6rem',
-                                  height: 16,
-                                  minWidth: 16,
-                                  padding: '0 4px'
-                                }
-                              }}
-                            />
-                          )}
-                        </Box>
-                      </Grid>
-                    );
-                  })}
+                    </Box>
+                  </ContentCard>
                 </Grid>
-              </ContentCard>
+              ))}
             </Grid>
             
-            {/* Today's Appointments - in the middle */}
-            <Grid item xs={12} md={3}>
-              <ContentCard sx={{ height: '100%' }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                  <Typography variant="h6" fontWeight="bold">Appuntamenti di Oggi</Typography>
-                  <Button size="small" color="primary" onClick={handleViewAllAppointments}>Vedi tutti</Button>
-                </Box>
-                
-                {todayAppointments.length > 0 ? todayAppointments.map(appointment => (
-                  <AppointmentItem key={appointment.id}>
-                    <Avatar sx={{ bgcolor: '#e3f2fd', color: '#2196f3', mr: 2 }}>
-                      <CalendarTodayIcon />
-                    </Avatar>
-                    <Box sx={{ flexGrow: 1 }}>
-                      <Typography variant="subtitle1" fontWeight="medium">{appointment.name || appointment.title || 'Appuntamento'}</Typography>
-                      <Typography variant="body2" color="text.secondary">{appointment.type || 'Visita'}</Typography>
+            <Grid container spacing={3}>
+              {/* Calendar */}
+              <Grid item xs={12} md={6}>
+                <ContentCard>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                    <SectionTitle variant="h6">Calendario Mensile</SectionTitle>
+                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                      <IconButton onClick={handlePrevMonth} size="small">
+                        <ArrowBackIosNewIcon fontSize="small" />
+                      </IconButton>
+                      <Typography variant="subtitle1" sx={{ mx: 1, whiteSpace: 'nowrap' }}>
+                        {format(currentMonth, 'MMMM yyyy', { locale: it })}
+                      </Typography>
+                      <IconButton onClick={handleNextMonth} size="small">
+                        <ArrowForwardIosIcon fontSize="small" />
+                      </IconButton>
                     </Box>
-                    <Box sx={{ textAlign: 'right' }}>
-                      <Typography variant="subtitle1">{appointment.time || appointment.appointment_time}</Typography>
-                      <Button size="small" color="primary" onClick={() => handleAppointmentDetails(appointment.id)}>Dettagli</Button>
-                    </Box>
-                  </AppointmentItem>
-                )) : (
-                  <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
-                    Nessun appuntamento oggi
-                  </Typography>
-                )}
-              </ContentCard>
-            </Grid>
-            
-            {/* Upcoming Appointments - moved to the right of Today's Appointments */}
-            <Grid item xs={12} md={3}>
-              <ContentCard sx={{ height: '100%' }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                  <Typography variant="h6" fontWeight="bold">Prossimi Appuntamenti</Typography>
-                  <Button size="small" color="primary" onClick={handleViewAllAppointments}>Vedi tutti</Button>
-                </Box>
-                
-                {upcomingAppointments.length > 0 ? (
-                  <Box sx={{ maxHeight: '400px', overflow: 'auto' }}>
-                    {upcomingAppointments.map(appointment => (
-                      <AppointmentItem key={appointment.id}>
-                        <Avatar sx={{ bgcolor: '#e3f2fd', color: '#2196f3', mr: 2 }}>
-                          <CalendarTodayIcon />
-                        </Avatar>
-                        <Box sx={{ flexGrow: 1 }}>
-                          <Typography variant="subtitle1" fontWeight="medium">
-                            {appointment.title || 'Appuntamento'}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            {appointment.first_name} {appointment.last_name}
-                          </Typography>
-                          <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
-                            <Typography variant="body2">
-                              {formatDate(appointment.appointment_date || appointment.date)}
-                            </Typography>
-                            <Typography variant="body2">{appointment.appointment_time || appointment.time}</Typography>
-                          </Box>
-                        </Box>
-                        <Button size="small" color="primary" onClick={() => handleAppointmentDetails(appointment.id)}>Dettagli</Button>
-                      </AppointmentItem>
-                    ))}
                   </Box>
-                ) : (
-                  <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
-                    Nessun appuntamento in programma
-                  </Typography>
-                )}
-              </ContentCard>
-            </Grid>
-            
-            {/* Recent Patients - moved below the first row */}
-            <Grid item xs={12} md={12}>
-              <ContentCard>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                  <Typography variant="h6" fontWeight="bold">Utenti Recenti</Typography>
-                  <Button size="small" color="primary" onClick={handleViewAllUsers}>Vedi tutti</Button>
-                </Box>
-                
-                {recentPatients.length > 0 ? (
-                  <Grid container spacing={2}>
-                    {recentPatients.map(patient => (
-                      <Grid item xs={12} sm={6} md={4} key={patient.id}>
-                        <Box sx={{ display: 'flex', p: 2, border: '1px solid #f0f0f0', borderRadius: 1 }}>
-                          <Avatar sx={{ bgcolor: '#e8f5e9', color: '#4caf50', mr: 2 }}>
+                  
+                  <CalendarContainer>
+                    <Grid container spacing={1}>
+                      {/* Calendar header */}
+                      <Grid item xs={12}>
+                        <Grid container>
+                          {['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'].map((day) => (
+                            <Grid item xs={12/7} key={day}>
+                              <Typography variant="body2" align="center" sx={{ fontWeight: 'bold' }}>
+                                {day}
+                              </Typography>
+                            </Grid>
+                          ))}
+                        </Grid>
+                      </Grid>
+                      
+                      {/* Calendar days */}
+                      <Grid item xs={12}>
+                        <Grid container spacing={1}>
+                          {eachDayOfInterval({
+                            start: startOfMonth(currentMonth),
+                            end: endOfMonth(currentMonth)
+                          }).map((day, index) => {
+                            const dateKey = format(day, 'yyyy-MM-dd');
+                            const hasAppointments = appointmentsByDate[dateKey] && appointmentsByDate[dateKey].length > 0;
+                            const appointmentsCount = hasAppointments ? appointmentsByDate[dateKey].length : 0;
+                            
+                            return (
+                              <Grid item xs={12/7} key={index}>
+                                <Paper 
+                                  elevation={0} 
+                                  sx={{
+                                    p: 1,
+                                    textAlign: 'center',
+                                    bgcolor: hasAppointments ? '#e3f2fd' : '#f5f5f5',
+                                    borderRadius: 1,
+                                    position: 'relative',
+                                    height: '40px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    justifyContent: 'center',
+                                    alignItems: 'center'
+                                  }}
+                                >
+                                  <Typography variant="body2">
+                                    {getDate(day)}
+                                  </Typography>
+                                  {hasAppointments && (
+                                    <Chip 
+                                      label={appointmentsCount} 
+                                      size="small" 
+                                      color="primary" 
+                                      sx={{ 
+                                        height: '16px',
+                                        fontSize: '0.6rem',
+                                        position: 'absolute',
+                                        top: '2px',
+                                        right: '2px'
+                                      }} 
+                                    />
+                                  )}
+                                </Paper>
+                              </Grid>
+                            );
+                          })}
+                        </Grid>
+                      </Grid>
+                    </Grid>
+                  </CalendarContainer>
+                </ContentCard>
+              </Grid>
+              
+              {/* Today's Appointments */}
+              <Grid item xs={12} md={6}>
+                <ContentCard>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                    <SectionTitle variant="h6">Appuntamenti di Oggi</SectionTitle>
+                    <Button 
+                      size="small" 
+                      onClick={handleViewAllAppointments}
+                      sx={{ whiteSpace: 'nowrap' }}
+                    >
+                      Vedi tutti
+                    </Button>
+                  </Box>
+                  
+                  <AppointmentsList>
+                    {todayAppointments.length > 0 ? (
+                      todayAppointments.map((appointment) => (
+                        <AppointmentItem key={appointment.id}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                            <Avatar sx={{ bgcolor: '#e8f5e9', color: '#4caf50', mr: 2 }}>
+                              <CalendarTodayIcon />
+                            </Avatar>
+                            <Box sx={{ flexGrow: 1, overflow: 'hidden' }}>
+                              <Typography variant="subtitle2" sx={{ fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {appointment.title || 'Appuntamento'}
+                              </Typography>
+                              <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center' }}>
+                                <AccessTime fontSize="small" sx={{ mr: 0.5, fontSize: '0.9rem' }} />
+                                {appointment.appointment_time || appointment.time}
+                              </Typography>
+                              <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                <PersonIcon fontSize="small" sx={{ mr: 0.5, fontSize: '0.9rem' }} />
+                                {appointment.first_name && appointment.last_name 
+                                  ? `${appointment.first_name} ${appointment.last_name}` 
+                                  : appointment.name || 'Paziente'}
+                              </Typography>
+                            </Box>
+                            <Button 
+                              size="small" 
+                              variant="outlined" 
+                              startIcon={<VisibilityIcon />}
+                              onClick={() => handleAppointmentDetails(appointment.id)}
+                              sx={{ ml: 1, whiteSpace: 'nowrap' }}
+                            >
+                              Dettagli
+                            </Button>
+                          </Box>
+                        </AppointmentItem>
+                      ))
+                    ) : (
+                      <Box sx={{ p: 2, textAlign: 'center' }}>
+                        <Typography variant="body1" color="text.secondary">
+                          Nessun appuntamento oggi
+                        </Typography>
+                      </Box>
+                    )}
+                  </AppointmentsList>
+                </ContentCard>
+              </Grid>
+              
+              {/* Recent Patients */}
+              <Grid item xs={12} md={6}>
+                <ContentCard>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                    <SectionTitle variant="h6">Utenti Recenti</SectionTitle>
+                    <Button 
+                      size="small" 
+                      onClick={handleViewAllUsers}
+                      sx={{ whiteSpace: 'nowrap' }}
+                    >
+                      Vedi tutti
+                    </Button>
+                  </Box>
+                  
+                  <PatientsList>
+                    {recentPatients.map((patient) => (
+                      <AppointmentItem key={patient.id}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                          <Avatar sx={{ bgcolor: '#e3f2fd', color: '#2196f3', mr: 2 }}>
                             <PersonIcon />
                           </Avatar>
-                          <Box sx={{ flexGrow: 1 }}>
-                            <Typography variant="subtitle1" fontWeight="medium">
+                          <Box sx={{ flexGrow: 1, overflow: 'hidden' }}>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                               {patient.first_name} {patient.last_name}
                             </Typography>
-                            <Typography variant="body2" color="text.secondary">
+                            <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              <EmailIcon fontSize="small" sx={{ mr: 0.5, fontSize: '0.9rem' }} />
                               {patient.email}
                             </Typography>
-                            <Typography variant="body2" sx={{ mt: 1 }}>
-                              Registrato: {new Date(patient.created_at).toLocaleDateString('it-IT')}
-                            </Typography>
                           </Box>
-                          <Button size="small" color="primary" onClick={() => handleUserDetails(patient.id)}>Dettagli</Button>
+                          <Button 
+                            size="small" 
+                            variant="outlined" 
+                            startIcon={<VisibilityIcon />}
+                            onClick={() => handleUserDetails(patient.id)}
+                            sx={{ ml: 1, whiteSpace: 'nowrap' }}
+                          >
+                            Dettagli
+                          </Button>
                         </Box>
-                      </Grid>
+                      </AppointmentItem>
                     ))}
-                  </Grid>
-                ) : (
-                  <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
-                    Nessun utente recente
-                  </Typography>
-                )}
-              </ContentCard>
+                  </PatientsList>
+                </ContentCard>
+              </Grid>
+              
+              {/* Upcoming Appointments */}
+              <Grid item xs={12} md={6}>
+                <ContentCard>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                    <SectionTitle variant="h6">Prossimi Appuntamenti</SectionTitle>
+                    <Button 
+                      size="small" 
+                      onClick={handleViewAllAppointments}
+                      sx={{ whiteSpace: 'nowrap' }}
+                    >
+                      Vedi tutti
+                    </Button>
+                  </Box>
+                  
+                  <AppointmentsList>
+                    {upcomingAppointments.length > 0 ? (
+                      upcomingAppointments.map((appointment) => (
+                        <AppointmentItem key={appointment.id}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                            <Avatar sx={{ bgcolor: '#fff8e1', color: '#ff9800', mr: 2 }}>
+                              <CalendarTodayIcon />
+                            </Avatar>
+                            <Box sx={{ flexGrow: 1, overflow: 'hidden' }}>
+                              <Typography variant="subtitle2" sx={{ fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {appointment.title || 'Appuntamento'}
+                              </Typography>
+                              <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
+                                {formatDate(appointment.appointment_date || appointment.date || '')}
+                              </Typography>
+                              <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center' }}>
+                                <AccessTime fontSize="small" sx={{ mr: 0.5, fontSize: '0.9rem' }} />
+                                {appointment.appointment_time || appointment.time}
+                              </Typography>
+                              <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                <PersonIcon fontSize="small" sx={{ mr: 0.5, fontSize: '0.9rem' }} />
+                                {appointment.first_name && appointment.last_name 
+                                  ? `${appointment.first_name} ${appointment.last_name}` 
+                                  : appointment.name || 'Paziente'}
+                              </Typography>
+                            </Box>
+                            <Button 
+                              size="small" 
+                              variant="outlined" 
+                              startIcon={<VisibilityIcon />}
+                              onClick={() => handleAppointmentDetails(appointment.id)}
+                              sx={{ ml: 1, whiteSpace: 'nowrap' }}
+                            >
+                              Dettagli
+                            </Button>
+                          </Box>
+                        </AppointmentItem>
+                      ))
+                    ) : (
+                      <Box sx={{ p: 2, textAlign: 'center' }}>
+                        <Typography variant="body1" color="text.secondary">
+                          Nessun appuntamento in programma
+                        </Typography>
+                      </Box>
+                    )}
+                  </AppointmentsList>
+                </ContentCard>
+              </Grid>
             </Grid>
-          </Grid>
-        </Container>
+          </Container>
       </Box>
     </Box>
   );

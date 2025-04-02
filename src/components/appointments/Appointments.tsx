@@ -25,7 +25,8 @@ import {
   MenuItem,
   Paper,
   FormControl,
-  InputLabel
+  InputLabel,
+  Container
 } from '@mui/material';
 import { 
   Add as AddIcon, 
@@ -64,6 +65,29 @@ const SidebarItem = styled(Box)(({ theme }) => ({
       color: theme.palette.primary.main,
     }
   }));
+
+// Aggiungo nuovi componenti styled per migliorare il layout
+const SectionTitle = styled(Typography)(({ theme }) => ({
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  fontWeight: 'bold',
+  marginBottom: theme.spacing(2)
+}));
+
+const AppointmentsList = styled(Box)(({ theme }) => ({
+  overflowY: 'auto',
+  maxHeight: '70vh'
+}));
+
+const FilterContainer = styled(Paper)(({ theme }) => ({
+  padding: theme.spacing(2),
+  marginBottom: theme.spacing(3),
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: theme.spacing(2),
+  alignItems: 'center'
+}));
 
 // Interfaccia per gli appuntamenti
 interface Appointment {
@@ -359,281 +383,237 @@ const Appointments: React.FC = () => {
   };
 
   return (
-    <Box sx={{ display: 'flex' }}> {/* Contenitore principale con display flex */}
-      <Sidebar /> {/* La sidebar qui */}
+    <Box sx={{ display: 'flex', bgcolor: '#fafafa', minHeight: '100vh' }}>
+      <Sidebar />
       
-      <Box sx={{ flexGrow: 1, p: 3, ml: '0px' }}> {/* Rimosso il margine a sinistra */}
-        <Box sx={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center',
-          mb: 3 
-        }}>
-          <Typography variant="h4" component="h1" sx={{ fontWeight: 'bold' }}>
-            Appuntamenti
-          </Typography>
-          <Button 
-            variant="contained" 
-            startIcon={<AddIcon />}
-            onClick={() => handleOpenFormDialog()}
-            sx={{ 
-              borderRadius: 2,
-              boxShadow: '0 4px 8px rgba(0,0,0,0.15)',
-            }}
-          >
-            Nuovo Appuntamento
-          </Button>
-        </Box>
-
-        {/* Filtri */}
-        <Paper sx={{ p: 2, mb: 3, borderRadius: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-            <FilterIcon sx={{ mr: 1, color: 'primary.main' }} />
-            <Typography variant="h6" component="h2">
-              Filtra Appuntamenti
-            </Typography>
-          </Box>
-          
-          <Grid container spacing={2}>
-            <Grid item xs={12} sm={6} md={3}>
-              <TextField
-                fullWidth
-                label="Nome Paziente"
-                variant="outlined"
-                size="small"
-                value={filters.patientName}
-                onChange={(e) => handleFilterChange('patientName', e.target.value)}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchIcon fontSize="small" />
-                    </InputAdornment>
-                  ),
-                }}
-              />
-            </Grid>
+      <Box sx={{ flexGrow: 1, p: 3 }}>
+        <Container maxWidth="xl">
+          {/* Header */}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+            <SectionTitle variant="h4">Gestione Appuntamenti</SectionTitle>
             
-            <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={it}>
-              <Grid item xs={12} sm={6} md={3}>
-                <DatePicker
-                  label="Data Inizio"
-                  value={filters.startDate}
-                  onChange={(date) => handleFilterChange('startDate', date)}
-                  slotProps={{ textField: { size: 'small', fullWidth: true } }}
-                />
-              </Grid>
-              
-              <Grid item xs={12} sm={6} md={3}>
-                <DatePicker
-                  label="Data Fine"
-                  value={filters.endDate}
-                  onChange={(date) => handleFilterChange('endDate', date)}
-                  slotProps={{ textField: { size: 'small', fullWidth: true } }}
-                />
-              </Grid>
-            </LocalizationProvider>
-            
-            <Grid item xs={12} sm={6} md={3}>
-              <FormControl fullWidth size="small">
-                <InputLabel id="status-filter-label">Stato</InputLabel>
-                <Select
-                  labelId="status-filter-label"
-                  id="status-filter"
-                  value={filters.status}
-                  label="Stato"
-                  onChange={(e) => handleFilterChange('status', e.target.value)}
-                >
-                  <MenuItem value="all">Tutti</MenuItem>
-                  <MenuItem value="scheduled">Programmati</MenuItem>
-                  <MenuItem value="completed">Completati</MenuItem>
-                  <MenuItem value="cancelled">Cancellati</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-            
-            <Grid item xs={12} display="flex" justifyContent="flex-end">
-              <Button 
-                variant="outlined" 
-                onClick={resetFilters}
-                sx={{ mr: 1 }}
-              >
-                Reimposta Filtri
-              </Button>
-            </Grid>
-          </Grid>
-        </Paper>
-
-        {/* Resto del contenuto... */}
-        {loading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
-            <CircularProgress />
-          </Box>
-        ) : filteredAppointments.length === 0 ? (
-          <Box sx={{ 
-            display: 'flex', 
-            flexDirection: 'column', 
-            alignItems: 'center', 
-            justifyContent: 'center', 
-            mt: 8,
-            p: 3,
-            bgcolor: 'background.paper',
-            borderRadius: 2,
-            boxShadow: 1
-          }}>
-            <EventIcon sx={{ fontSize: 60, color: 'text.secondary', mb: 2 }} />
-            <Typography variant="h6" color="text.secondary" gutterBottom>
-              Nessun appuntamento trovato
-            </Typography>
-            <Typography variant="body1" color="text.secondary" align="center" sx={{ mb: 3 }}>
-              Non ci sono appuntamenti programmati. Clicca sul pulsante "Nuovo Appuntamento" per crearne uno.
-            </Typography>
-            <Button 
-              variant="contained" 
-              startIcon={<AddIcon />} 
-              onClick={() => handleOpenFormDialog()}
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => {
+                setSelectedAppointment(null);
+                setOpenFormDialog(true);
+              }}
+              sx={{ whiteSpace: 'nowrap' }}
             >
               Nuovo Appuntamento
             </Button>
           </Box>
-        ) : (
-          <Grid container spacing={3}>
-            {filteredAppointments.map((appointment) => (
-              <Grid item xs={12} sm={6} md={4} key={appointment.id}>
-                <Card 
-                  sx={{ 
-                    height: '100%', 
-                    display: 'flex', 
-                    flexDirection: 'column',
-                    borderRadius: 2,
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                    transition: 'transform 0.2s, box-shadow 0.2s',
-                    '&:hover': {
-                      transform: 'translateY(-4px)',
-                      boxShadow: '0 8px 16px rgba(0,0,0,0.2)',
-                    }
-                  }}
-                >
-                  <CardContent sx={{ flexGrow: 1 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-                      <Typography variant="h6" component="h2" sx={{ fontWeight: 'bold' }}>
-                        {appointment.title}
-                      </Typography>
-                      <Chip 
-                        label={translateStatus(appointment.status)} 
-                        color={getStatusColor(appointment.status) as any}
-                        size="small"
-                      />
-                    </Box>
-                    
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                      <PersonIcon sx={{ mr: 1, color: 'text.secondary' }} />
-                      <Typography variant="body1">
-                        {appointment.first_name && appointment.last_name 
-                          ? `${appointment.first_name} ${appointment.last_name}`
-                          : appointment.patient_name || 'Utente non specificato'}
-                      </Typography>
-                    </Box>
-                    
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                      <EventIcon sx={{ mr: 1, color: 'text.secondary' }} />
-                      <Typography variant="body2">
-                        {formatDate(appointment.appointment_date || appointment.date || '')}
-                      </Typography>
-                    </Box>
-                    
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                      <TimeIcon sx={{ mr: 1, color: 'text.secondary' }} />
-                      <Typography variant="body2">
-                        {appointment.appointment_time || appointment.time || ''} - {appointment.duration} min
-                      </Typography>
-                    </Box>
-                    
-                    {appointment.notes && (
-                      <Box sx={{ display: 'flex', alignItems: 'flex-start', mt: 2 }}>
-                        <NotesIcon sx={{ mr: 1, mt: 0.5, color: 'text.secondary' }} />
-                        <Typography variant="body2" color="text.secondary">
-                          {appointment.notes}
-                        </Typography>
-                      </Box>
-                    )}
-                  </CardContent>
-                  
-                  <Divider />
-                  
-                  <CardActions sx={{ justifyContent: 'flex-end', p: 1 }}>
-                    <IconButton 
-                      size="small" 
-                      onClick={() => handleOpenFormDialog(appointment)}
-                      color="primary"
-                    >
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton 
-                      size="small"
-                      color="error"
-                      onClick={() => handleOpenDeleteDialog(appointment)}
-                    >
-                      <DeleteIcon />
-                    </IconButton>
-                  </CardActions>
-                </Card>
-              </Grid>
-            ))}
-          </Grid>
-        )}
-
-        {/* Dialog per creare/modificare appuntamenti */}
-        <Dialog 
-          open={openFormDialog} 
-          onClose={handleCloseFormDialog} 
-          maxWidth="sm" 
-          fullWidth
-        >
-          <DialogTitle>
-            {selectedAppointment ? 'Modifica Appuntamento' : 'Nuovo Appuntamento'}
-          </DialogTitle>
-          <AppointmentForm 
-            appointment={selectedAppointment} 
-            onSave={handleSaveAppointment} 
-            onCancel={handleCloseFormDialog} 
-          />
-        </Dialog>
-
-        {/* Dialog per confermare l'eliminazione */}
-        <Dialog
-          open={openDeleteDialog}
-          onClose={handleCloseDeleteDialog}
-        >
-          <DialogTitle>Conferma eliminazione</DialogTitle>
-          <DialogContent>
-            <DialogContentText>
-              Sei sicuro di voler eliminare questo appuntamento? Questa azione non può essere annullata.
-            </DialogContentText>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={handleCloseDeleteDialog}>Annulla</Button>
-            <Button onClick={handleDeleteAppointment} color="error" variant="contained">
-              Elimina
+          
+          {/* Filtri */}
+          <FilterContainer>
+            <TextField
+              label="Nome Paziente"
+              variant="outlined"
+              size="small"
+              value={filters.patientName}
+              onChange={(e) => handleFilterChange('patientName', e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon fontSize="small" />
+                  </InputAdornment>
+                ),
+              }}
+              sx={{ flexGrow: 1, minWidth: '200px' }}
+            />
+            
+            <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={it}>
+              <DatePicker
+                label="Data Inizio"
+                value={filters.startDate}
+                onChange={(date) => handleFilterChange('startDate', date)}
+                slotProps={{ textField: { size: 'small' } }}
+                sx={{ minWidth: '160px' }}
+              />
+              
+              <DatePicker
+                label="Data Fine"
+                value={filters.endDate}
+                onChange={(date) => handleFilterChange('endDate', date)}
+                slotProps={{ textField: { size: 'small' } }}
+                sx={{ minWidth: '160px' }}
+              />
+            </LocalizationProvider>
+            
+            <FormControl size="small" sx={{ minWidth: '150px' }}>
+              <InputLabel id="status-filter-label">Stato</InputLabel>
+              <Select
+                labelId="status-filter-label"
+                value={filters.status}
+                label="Stato"
+                onChange={(e) => handleFilterChange('status', e.target.value)}
+              >
+                <MenuItem value="all">Tutti</MenuItem>
+                <MenuItem value="scheduled">Programmati</MenuItem>
+                <MenuItem value="completed">Completati</MenuItem>
+                <MenuItem value="cancelled">Cancellati</MenuItem>
+              </Select>
+            </FormControl>
+            
+            <Button
+              variant="outlined"
+              startIcon={<FilterIcon />}
+              onClick={resetFilters}
+              sx={{ whiteSpace: 'nowrap' }}
+            >
+              Reset Filtri
             </Button>
-          </DialogActions>
-        </Dialog>
-
-        {/* Notifiche */}
-        <Snackbar
-          open={notification.open}
-          autoHideDuration={6000}
-          onClose={handleCloseNotification}
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-        >
-          <Alert
-            onClose={handleCloseNotification}
-            severity={notification.severity}
-            sx={{ width: '100%' }}
-          >
-            {notification.message}
-          </Alert>
-        </Snackbar>
+          </FilterContainer>
+          
+          {/* Lista Appuntamenti */}
+          {loading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+              <CircularProgress />
+            </Box>
+          ) : (
+            <AppointmentsList>
+              {filteredAppointments.length > 0 ? (
+                <Grid container spacing={2}>
+                  {filteredAppointments.map((appointment) => (
+                    <Grid item xs={12} sm={6} md={4} key={appointment.id}>
+                      <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                        <CardContent sx={{ flexGrow: 1 }}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+                            <Typography variant="h6" sx={{ fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {appointment.title || 'Appuntamento'}
+                            </Typography>
+                            <Chip
+                              label={translateStatus(appointment.status)}
+                              color={appointment.status === 'completed' ? 'success' : appointment.status === 'cancelled' ? 'error' : 'primary'}
+                              size="small"
+                              sx={{ whiteSpace: 'nowrap' }}
+                            />
+                          </Box>
+                          
+                          <Divider sx={{ mb: 2 }} />
+                          
+                          <Box sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
+                            <PersonIcon fontSize="small" sx={{ mr: 1, color: 'primary.main' }} />
+                            <Typography variant="body2" sx={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {appointment.first_name && appointment.last_name
+                                ? `${appointment.first_name} ${appointment.last_name}`
+                                : appointment.patient_name || 'Paziente'}
+                            </Typography>
+                          </Box>
+                          
+                          <Box sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
+                            <EventIcon fontSize="small" sx={{ mr: 1, color: 'primary.main' }} />
+                            <Typography variant="body2">
+                              {formatDate(appointment.appointment_date || appointment.date || '')}
+                            </Typography>
+                          </Box>
+                          
+                          <Box sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
+                            <TimeIcon fontSize="small" sx={{ mr: 1, color: 'primary.main' }} />
+                            <Typography variant="body2">
+                              {appointment.appointment_time || appointment.time || 'Orario non specificato'}
+                            </Typography>
+                          </Box>
+                          
+                          {appointment.notes && (
+                            <Box sx={{ mt: 2 }}>
+                              <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'flex-start' }}>
+                                <NotesIcon fontSize="small" sx={{ mr: 1, mt: 0.5, color: 'text.secondary' }} />
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                                  {appointment.notes}
+                                </span>
+                              </Typography>
+                            </Box>
+                          )}
+                        </CardContent>
+                        
+                        <CardActions sx={{ justifyContent: 'flex-end', p: 2, pt: 0 }}>
+                          <Button
+                            size="small"
+                            startIcon={<EditIcon />}
+                            onClick={() => {
+                              setSelectedAppointment(appointment);
+                              setOpenFormDialog(true);
+                            }}
+                            sx={{ whiteSpace: 'nowrap' }}
+                          >
+                            Modifica
+                          </Button>
+                          <Button
+                            size="small"
+                            color="error"
+                            startIcon={<DeleteIcon />}
+                            onClick={() => {
+                              setSelectedAppointment(appointment);
+                              setOpenDeleteDialog(true);
+                            }}
+                            sx={{ whiteSpace: 'nowrap' }}
+                          >
+                            Elimina
+                          </Button>
+                        </CardActions>
+                      </Card>
+                    </Grid>
+                  ))}
+                </Grid>
+              ) : (
+                <Box sx={{ textAlign: 'center', p: 4 }}>
+                  <Typography variant="h6" color="text.secondary">
+                    Nessun appuntamento trovato
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Prova a modificare i filtri o crea un nuovo appuntamento
+                  </Typography>
+                </Box>
+              )}
+            </AppointmentsList>
+          )}
+        </Container>
       </Box>
+      
+      {/* Dialog per il form di creazione/modifica */}
+      <Dialog open={openFormDialog} onClose={() => setOpenFormDialog(false)} maxWidth="md" fullWidth>
+        <DialogTitle>
+          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+            {selectedAppointment ? 'Modifica Appuntamento' : 'Nuovo Appuntamento'}
+          </Typography>
+        </DialogTitle>
+        <DialogContent dividers>
+          <AppointmentForm
+            appointment={selectedAppointment}
+            onSave={handleSaveAppointment}
+            onCancel={() => setOpenFormDialog(false)}
+          />
+        </DialogContent>
+      </Dialog>
+      
+      {/* Dialog per la conferma di eliminazione */}
+      <Dialog open={openDeleteDialog} onClose={() => setOpenDeleteDialog(false)}>
+        <DialogTitle>Conferma Eliminazione</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Sei sicuro di voler eliminare questo appuntamento? Questa azione non può essere annullata.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenDeleteDialog(false)}>Annulla</Button>
+          <Button onClick={handleDeleteAppointment} color="error" autoFocus>
+            Elimina
+          </Button>
+        </DialogActions>
+      </Dialog>
+      
+      {/* Notifica */}
+      <Snackbar
+        open={notification.open}
+        autoHideDuration={6000}
+        onClose={() => setNotification({ ...notification, open: false })}
+      >
+        <Alert onClose={() => setNotification({ ...notification, open: false })} severity={notification.severity}>
+          {notification.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

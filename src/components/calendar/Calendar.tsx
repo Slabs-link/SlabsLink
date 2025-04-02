@@ -17,6 +17,19 @@ const DayCell = styled(Paper)(({ theme }) => ({
   overflow: 'hidden'
 }));
 
+// Aggiungo nuovi componenti styled per migliorare il layout
+const SectionTitle = styled(Typography)(({ theme }) => ({
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  fontWeight: 'bold'
+}));
+
+const CalendarGrid = styled(Grid)(({ theme }) => ({
+  overflowY: 'auto',
+  maxHeight: '70vh'
+}));
+
 const Calendar: React.FC = () => {
   const [currentWeek, setCurrentWeek] = useState({
     start: '17 marzo',
@@ -52,25 +65,28 @@ const Calendar: React.FC = () => {
         <Container maxWidth="xl">
           {/* Header */}
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
-            <Typography variant="h4" fontWeight="bold">Calendario Appuntamenti</Typography>
+            <SectionTitle variant="h4">Calendario Appuntamenti</SectionTitle>
             
             <Box>
               <ButtonGroup variant="outlined" sx={{ mr: 2 }}>
                 <Button 
                   variant={viewMode === 'Giorno' ? 'contained' : 'outlined'}
                   onClick={() => setViewMode('Giorno')}
+                  sx={{ whiteSpace: 'nowrap' }}
                 >
                   Giorno
                 </Button>
                 <Button 
                   variant={viewMode === 'Settimana' ? 'contained' : 'outlined'}
                   onClick={() => setViewMode('Settimana')}
+                  sx={{ whiteSpace: 'nowrap' }}
                 >
                   Settimana
                 </Button>
                 <Button 
                   variant={viewMode === 'Mese' ? 'contained' : 'outlined'}
                   onClick={() => setViewMode('Mese')}
+                  sx={{ whiteSpace: 'nowrap' }}
                 >
                   Mese
                 </Button>
@@ -80,6 +96,7 @@ const Calendar: React.FC = () => {
                 variant="contained" 
                 startIcon={<AddIcon />}
                 color="primary"
+                sx={{ whiteSpace: 'nowrap' }}
               >
                 Nuovo Appuntamento
               </Button>
@@ -94,7 +111,7 @@ const Calendar: React.FC = () => {
             
             <Box sx={{ display: 'flex', alignItems: 'center', mx: 2 }}>
               <CalendarTodayIcon sx={{ mr: 1 }} />
-              <Typography variant="h6">
+              <Typography variant="h6" sx={{ whiteSpace: 'nowrap' }}>
                 {currentWeek.start} - {currentWeek.end} {currentWeek.year}
               </Typography>
             </Box>
@@ -105,11 +122,11 @@ const Calendar: React.FC = () => {
           </Box>
           
           {/* Calendar Grid */}
-          <Grid container spacing={1}>
+          <CalendarGrid container spacing={1}>
             {days.map((day) => (
               <Grid item xs key={day.name}>
                 <DayCell elevation={0}>
-                  <Typography variant="subtitle1" align="center" sx={{ fontWeight: 'bold', mb: 1 }}>
+                  <Typography variant="subtitle1" align="center" sx={{ fontWeight: 'bold', mb: 1, whiteSpace: 'nowrap' }}>
                     {day.name}
                   </Typography>
                   <Typography variant="h6" align="center" sx={{ mb: 2 }}>
@@ -123,15 +140,17 @@ const Calendar: React.FC = () => {
                   ) : (
                     day.appointments.map((appointment) => (
                       // Render appointments here
-                      <Box key={appointment}>
-                        {/* Appointment content */}
+                      <Box key={appointment} sx={{ mb: 1, p: 1, bgcolor: '#e3f2fd', borderRadius: 1, overflow: 'hidden' }}>
+                        <Typography variant="body2" sx={{ fontWeight: 'medium', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          Appuntamento
+                        </Typography>
                       </Box>
                     ))
                   )}
                 </DayCell>
               </Grid>
             ))}
-          </Grid>
+          </CalendarGrid>
         </Container>
       </Box>
     </Box>

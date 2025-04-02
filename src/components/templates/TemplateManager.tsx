@@ -4,10 +4,35 @@ import {
   Box, Typography, Button, Paper, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, IconButton, Dialog, DialogTitle, DialogContent,
   DialogActions, TextField, FormControl, InputLabel, Select, MenuItem,
-  Snackbar, Alert, AlertColor, SelectChangeEvent
+  Snackbar, Alert, AlertColor, SelectChangeEvent, Container
 } from '@mui/material';
 import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import { Template } from '../../types/template';
+import { styled } from '@mui/material/styles';
+import Sidebar from '../common/Sidebar';
+
+// Componenti styled per migliorare il layout
+const SectionTitle = styled(Typography)(({ theme }) => ({
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  fontWeight: 'bold',
+  marginBottom: theme.spacing(2)
+}));
+
+const TemplatesList = styled(TableContainer)(({ theme }) => ({
+  overflowY: 'auto',
+  maxHeight: '70vh'
+}));
+
+const ContentCard = styled(Paper)(({ theme }) => ({
+  padding: theme.spacing(3),
+  borderRadius: theme.shape.borderRadius,
+  boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+  height: '100%',
+  display: 'flex',
+  flexDirection: 'column'
+}));
 
 const TemplateManager: React.FC = () => {
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -190,126 +215,149 @@ const TemplateManager: React.FC = () => {
   };
 
   return (
-    <Box sx={{ p: 3 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h5">Gestione Template</Typography>
-        <Button 
-          variant="contained" 
-          startIcon={<AddIcon />}
-          onClick={() => handleOpenDialog()}
-        >
-          Nuovo Template
-        </Button>
+    <Box sx={{ display: 'flex', bgcolor: '#fafafa', minHeight: '100vh' }}>
+      <Sidebar />
+      
+      <Box sx={{ flexGrow: 1, p: 3 }}>
+        <Container maxWidth="xl">
+          {/* Header */}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+            <SectionTitle variant="h4">Gestione Template</SectionTitle>
+            <Button 
+              variant="contained" 
+              startIcon={<AddIcon />}
+              onClick={() => handleOpenDialog()}
+              sx={{ whiteSpace: 'nowrap' }}
+            >
+              Nuovo Template
+            </Button>
+          </Box>
+          
+          {/* Lista Template */}
+          <ContentCard>
+            <TemplatesList>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 'bold', whiteSpace: 'nowrap' }}>Nome</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold', whiteSpace: 'nowrap' }}>Descrizione</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold', whiteSpace: 'nowrap' }}>Tipo</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold', whiteSpace: 'nowrap' }}>Azioni</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {templates.length > 0 ? (
+                    templates.map((template) => (
+                      <TableRow key={template.id}>
+                        <TableCell sx={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '200px' }}>
+                          {template.name}
+                        </TableCell>
+                        <TableCell sx={{ overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '300px' }}>
+                          {template.description || '-'}
+                        </TableCell>
+                        <TableCell sx={{ whiteSpace: 'nowrap' }}>{template.type}</TableCell>
+                        <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                          <IconButton 
+                            size="small" 
+                            color="primary" 
+                            onClick={() => handleOpenDialog(template)}
+                          >
+                            <EditIcon />
+                          </IconButton>
+                          <IconButton 
+                            size="small" 
+                            color="error" 
+                            onClick={() => handleOpenDeleteDialog(template)}
+                          >
+                            <DeleteIcon />
+                          </IconButton>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={4} align="center">
+                        Nessun template disponibile
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </TemplatesList>
+          </ContentCard>
+        </Container>
       </Box>
 
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Nome</TableCell>
-              <TableCell>Descrizione</TableCell>
-              <TableCell>Tipo</TableCell>
-              <TableCell>Sistema</TableCell>
-              <TableCell>Azioni</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {templates.map((template) => (
-              <TableRow key={template.id}>
-                <TableCell>{template.name}</TableCell>
-                <TableCell>{template.description}</TableCell>
-                <TableCell>{template.type}</TableCell>
-                <TableCell>{template.is_system ? 'Sì' : 'No'}</TableCell>
-                <TableCell>
-                  {!template.is_system && (
-                    <>
-                      <IconButton onClick={() => handleOpenDialog(template)}>
-                        <EditIcon />
-                      </IconButton>
-                      <IconButton onClick={() => handleOpenDeleteDialog(template)}>
-                        <DeleteIcon />
-                      </IconButton>
-                    </>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
-
-      {/* Dialog per creare/modificare un template */}
+      {/* Dialog per creare/modificare template */}
       <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="md" fullWidth>
         <DialogTitle>
-          {selectedTemplate ? 'Modifica Template' : 'Nuovo Template'}
+          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+            {selectedTemplate ? 'Modifica Template' : 'Nuovo Template'}
+          </Typography>
         </DialogTitle>
-        <DialogContent>
-          <TextField
-            name="name"
-            label="Nome"
-            fullWidth
-            value={formData.name}
-            onChange={handleInputChange}
-            margin="normal"
-            required
-          />
-          <TextField
-            name="description"
-            label="Descrizione"
-            fullWidth
-            value={formData.description}
-            onChange={handleInputChange}
-            margin="normal"
-            multiline
-            rows={2}
-          />
-          <FormControl fullWidth margin="normal">
-            <InputLabel>Tipo</InputLabel>
-            <Select
-              name="type"
-              value={formData.type}
-              label="Tipo"
-              onChange={handleSelectChange}
-            >
-              <MenuItem value="custom">Personalizzato</MenuItem>
-              <MenuItem value="appointment_confirmation">Conferma Appuntamento</MenuItem>
-              <MenuItem value="appointment_cancellation">Cancellazione Appuntamento</MenuItem>
-              <MenuItem value="appointment_update">Modifica Appuntamento</MenuItem>
-              <MenuItem value="christmas_wishes">Auguri Natalizi</MenuItem>
-              <MenuItem value="new_year_wishes">Auguri Nuovo Anno</MenuItem>
-            </Select>
-          </FormControl>
-          <TextField
-            name="content"
-            label="Contenuto"
-            fullWidth
-            value={formData.content}
-            onChange={handleInputChange}
-            margin="normal"
-            multiline
-            rows={6}
-            required
-            helperText="Usa {{patient_name}} per il nome del paziente e altre variabili come {{appointment_date}}, {{appointment_time}}, ecc."
-          />
+        <DialogContent dividers>
+          <Box sx={{ p: 1 }}>
+            <TextField
+              fullWidth
+              margin="normal"
+              label="Nome"
+              name="name"
+              value={formData.name}
+              onChange={handleInputChange}
+              required
+            />
+            <TextField
+              fullWidth
+              margin="normal"
+              label="Descrizione"
+              name="description"
+              value={formData.description}
+              onChange={handleInputChange}
+              multiline
+              rows={2}
+            />
+            <FormControl fullWidth margin="normal">
+              <InputLabel id="template-type-label">Tipo</InputLabel>
+              <Select
+                labelId="template-type-label"
+                name="type"
+                value={formData.type}
+                label="Tipo"
+                onChange={handleSelectChange}
+              >
+                <MenuItem value="custom">Personalizzato</MenuItem>
+                <MenuItem value="email">Email</MenuItem>
+                <MenuItem value="sms">SMS</MenuItem>
+                <MenuItem value="whatsapp">WhatsApp</MenuItem>
+              </Select>
+            </FormControl>
+            <TextField
+              fullWidth
+              margin="normal"
+              label="Contenuto"
+              name="content"
+              value={formData.content}
+              onChange={handleInputChange}
+              multiline
+              rows={8}
+              required
+            />
+          </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseDialog}>Annulla</Button>
-          <Button 
-            onClick={handleSaveTemplate} 
-            variant="contained"
-            disabled={!formData.name || !formData.content}
-          >
+          <Button onClick={handleSaveTemplate} variant="contained" color="primary">
             Salva
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Dialog per confermare l'eliminazione */}
+      {/* Dialog per eliminare template */}
       <Dialog open={openDeleteDialog} onClose={handleCloseDeleteDialog}>
-        <DialogTitle>Conferma eliminazione</DialogTitle>
+        <DialogTitle>Conferma Eliminazione</DialogTitle>
         <DialogContent>
-          <Typography>
-            Sei sicuro di voler eliminare il template "{selectedTemplate?.name}"?
+          <Typography variant="body1">
+            Sei sicuro di voler eliminare il template "{selectedTemplate?.name}"? Questa azione non può essere annullata.
           </Typography>
         </DialogContent>
         <DialogActions>
@@ -321,11 +369,10 @@ const TemplateManager: React.FC = () => {
       </Dialog>
 
       {/* Notifica */}
-      <Snackbar 
-        open={notification.open} 
-        autoHideDuration={6000} 
+      <Snackbar
+        open={notification.open}
+        autoHideDuration={6000}
         onClose={handleCloseNotification}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
         <Alert onClose={handleCloseNotification} severity={notification.severity}>
           {notification.message}
