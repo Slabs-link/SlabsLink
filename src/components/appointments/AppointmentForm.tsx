@@ -11,14 +11,17 @@ import {
   Autocomplete,
   DialogContent,
   DialogActions,
-  CircularProgress
+  CircularProgress,
+  Typography
 } from '@mui/material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { it } from 'date-fns/locale';
+import { addMinutes, format, parse, isWithinInterval } from 'date-fns';
 import axios from 'axios';
+import { InfoOutlined } from '@mui/icons-material';
 
 interface User {
   id: number;
@@ -43,6 +46,14 @@ interface AppointmentFormData {
   duration: number;
   notes: string;
   status: 'scheduled' | 'completed' | 'cancelled';
+}
+
+// Interfaccia per gli appuntamenti esistenti
+interface ExistingAppointment {
+  id: number;
+  appointment_date: string;
+  appointment_time: string;
+  duration: number;
 }
 
 // Helper types for the date and time pickers
@@ -72,6 +83,8 @@ const AppointmentForm: React.FC<AppointmentFormProps> = ({ appointment, onSave, 
   const [loading, setLoading] = useState(false);
   const [loadingTypes, setLoadingTypes] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [existingAppointments, setExistingAppointments] = useState<ExistingAppointment[]>([]);
+  const [loadingAppointments, setLoadingAppointments] = useState(false);
 
   useEffect(() => {
     // Carica gli utenti per il dropdown
@@ -202,9 +215,82 @@ const AppointmentForm: React.FC<AppointmentFormProps> = ({ appointment, onSave, 
     }
   };
 
+  // Funzione per caricare gli appuntamenti esistenti per una data specifica
+  const fetchExistingAppointments = async (selectedDate: Date) => {
+    if (!selectedDate) return;
+    
+    setLoadingAppointments(true);
+    try {
+      // Formatta la data nel formato YYYY-MM-DD
+      const formattedDate = format(selectedDate, 'yyyy-MM-dd');
+      
+      // Ottieni gli appuntamenti per la data selezionata
+      const response = await axios.get(`http://localhost:3001/api/appointments/range/${formattedDate}/${formattedDate}`);
+      
+      // Filtra gli appuntamenti per escludere quello corrente (in caso di modifica)
+      const filteredAppointments = formData.id 
+        ? response.data.filter((app: any) => app.id !== formData.id)
+        : response.data;
+      
+      setExistingAppointments(filteredAppointments);
+    } catch (error) {
+      console.error('Error fetching existing appointments:', error);
+    } finally {
+      setLoadingAppointments(false);
+    }
+  };
+
+  // Funzione per verificare se un orario è già occupato
+  const isTimeSlotOccupied = (time: Date): boolean => {
+    if (!time || existingAppointments.length === 0) return false;
+    
+    // Estrai ore e minuti dall'orario selezionato
+    const hours = time.getHours();
+    const minutes = time.getMinutes();
+    
+    // Crea un oggetto Date per l'orario selezionato (usando una data fittizia)
+    const selectedTime = new Date(2000, 0, 1, hours, minutes);
+    
+    // Calcola l'orario di fine dell'appuntamento selezionato
+    const selectedEndTime = addMinutes(selectedTime, formData.duration);
+    
+    // Verifica se c'è sovrapposizione con appuntamenti esistenti
+    return existingAppointments.some(appointment => {
+      // Estrai ore e minuti dall'orario dell'appuntamento esistente
+      const [existingHours, existingMinutes] = appointment.appointment_time.split(':').map(Number);
+      
+      // Crea oggetti Date per l'orario di inizio e fine dell'appuntamento esistente
+      const existingStartTime = new Date(2000, 0, 1, existingHours, existingMinutes);
+      const existingEndTime = addMinutes(existingStartTime, appointment.duration);
+      
+      // Verifica se c'è sovrapposizione
+      return (
+        // Il nuovo appuntamento inizia durante un appuntamento esistente
+        (selectedTime >= existingStartTime && selectedTime < existingEndTime) ||
+        // Il nuovo appuntamento finisce durante un appuntamento esistente
+        (selectedEndTime > existingStartTime && selectedEndTime <= existingEndTime) ||
+        // Il nuovo appuntamento copre completamente un appuntamento esistente
+        (selectedTime <= existingStartTime && selectedEndTime >= existingEndTime)
+      );
+    });
+  };
+
+  // Funzione per disabilitare gli orari già occupati nel TimePicker
+  const shouldDisableTime = (time: Date, view: string): boolean => {
+    // Disabilita solo quando si selezionano i minuti
+    if (view !== 'minutes') return false;
+    
+    return isTimeSlotOccupied(time);
+  };
+
   // Funzioni per gestire i cambiamenti di data e ora
   const handleDateChange = (date: Date | null) => {
     setFormData(prev => ({ ...prev, date }));
+    
+    // Carica gli appuntamenti esistenti per la data selezionata
+    if (date) {
+      fetchExistingAppointments(date);
+    }
     
     // Clear error when field is edited
     if (errors.date) {
@@ -408,6 +494,7 @@ const AppointmentForm: React.FC<AppointmentFormProps> = ({ appointment, onSave, 
                   label="Ora"
                   value={getTimePickerValue(formData.time)}
                   onChange={handleTimeChange}
+                  shouldDisableTime={shouldDisableTime}
                   slotProps={{
                     textField: {
                       fullWidth: true,
@@ -417,6 +504,14 @@ const AppointmentForm: React.FC<AppointmentFormProps> = ({ appointment, onSave, 
                     }
                   }}
                 />
+                {formData.date && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
+                    <InfoOutlined fontSize="small" color="info" sx={{ mr: 0.5 }} />
+                    <Typography variant="caption" color="text.secondary">
+                      {loadingAppointments ? 'Caricamento orari disponibili...' : 'Gli orari già occupati sono disabilitati'}
+                    </Typography>
+                  </Box>
+                )}
               </Grid>
               
               <Grid item xs={12} sm={6}>
