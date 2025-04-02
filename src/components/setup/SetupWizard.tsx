@@ -150,41 +150,50 @@ export const SetupWizard: React.FC = () => {
   };
 
   // Funzione per gestire il caricamento del file JSON della licenza
-  const handleLicenseFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLicenseFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     setLicenseError(null);
-    const file = event.target.files?.[0];
-    if (!file) {
+    
+    if (!event.target.files || event.target.files.length === 0) {
       setLicenseError('Nessun file selezionato');
       return;
     }
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const content = e.target?.result as string;
-        const licenseData = JSON.parse(content) as LicenseFile;
-        
-        // Verifica che il file contenga i campi necessari
-        if (!licenseData.key || !licenseData.expirationDate || !licenseData.features) {
-          setLicenseError('Il file di licenza non è valido. Mancano campi obbligatori.');
-          return;
+    
+    const file = event.target.files[0];
+    
+    try {
+      // Utilizziamo FormData per inviare il file direttamente al server
+      // In questo modo il server gestirà la decrittografia
+      const formData = new FormData();
+      formData.append('licenseFile', file);
+      
+      const response = await axios.post('http://localhost:3001/api/license/import', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
         }
+      });
+      
+      if (response.data.success) {
+        // Estrai i dati della licenza dalla risposta
+        const licenseData = response.data.license;
         
-        setLicenseFile(licenseData);
-        setLicenseFeatures(licenseData.features);
+        // Crea un oggetto LicenseFile con i dati ricevuti
+        const licenseFile: LicenseFile = {
+          key: licenseData.key,
+          expirationDate: licenseData.expirationDate,
+          features: licenseData.features
+        };
+        
+        setLicenseFile(licenseFile);
+        setLicenseFeatures(licenseFile.features);
         // Imposta il valore della licenza nel form
-        formik.setFieldValue('licenseKey', licenseData.key);
-      } catch (error) {
-        console.error('Errore durante la lettura del file di licenza:', error);
-        setLicenseError('Il file selezionato non è un file JSON valido.');
+        formik.setFieldValue('licenseKey', licenseFile.key);
+      } else {
+        setLicenseError(response.data.message || 'Errore durante l\'elaborazione del file di licenza');
       }
-    };
-    
-    reader.onerror = () => {
-      setLicenseError('Errore durante la lettura del file.');
-    };
-    
-    reader.readAsText(file);
+    } catch (error: any) {
+      console.error('Errore durante l\'elaborazione del file di licenza:', error);
+      setLicenseError(error.response?.data?.message || 'Errore durante la lettura del file. Il file potrebbe essere danneggiato o non valido.');
+    }
   };
   
   // Effetto per avanzare automaticamente quando il file di licenza è caricato

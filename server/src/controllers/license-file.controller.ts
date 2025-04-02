@@ -4,6 +4,7 @@ import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { getDatabase } from '../config/database-sqlite';
 import multer from 'multer';
+import { decryptData, isEncrypted } from '../utils/crypto';
 
 // Extend Express Request interface to include file property from multer
 declare global {
@@ -43,7 +44,37 @@ export const loadLicenseFile = async (req: Request, res: Response) => {
     // Try to parse the JSON
     let licenseData: LicenseFile;
     try {
-      licenseData = JSON.parse(fileContent);
+      // Parse the JSON file
+      const parsedContent = JSON.parse(fileContent);
+      
+      // Check if the file is encrypted
+      if (parsedContent.encrypted && parsedContent.data) {
+        try {
+          // Decrypt the data
+          const decryptedData = decryptData(parsedContent.data);
+          licenseData = decryptedData;
+        } catch (decryptError) {
+          console.error('Errore durante la decrittografia della licenza:', decryptError);
+          return res.status(400).json({
+            success: false,
+            message: 'Impossibile decrittografare il file della licenza. Il file potrebbe essere danneggiato o manomesso.'
+          });
+        }
+      } else if (isEncrypted(fileContent)) {
+        // If the entire content is encrypted
+        try {
+          licenseData = decryptData(fileContent);
+        } catch (decryptError) {
+          console.error('Errore durante la decrittografia della licenza:', decryptError);
+          return res.status(400).json({
+            success: false,
+            message: 'Impossibile decrittografare il file della licenza. Il file potrebbe essere danneggiato o manomesso.'
+          });
+        }
+      } else {
+        // Not encrypted, use as is
+        licenseData = parsedContent;
+      }
     } catch (error) {
       return res.status(400).json({
         success: false,

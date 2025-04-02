@@ -2,6 +2,49 @@ import Database from 'better-sqlite3';
 import crypto from 'crypto';
 import readline from 'readline';
 import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Importa le funzioni di crittografia
+// Nota: poiché questo è un file .js e il modulo crypto.ts è in TypeScript,
+// dobbiamo importare le funzioni in modo dinamico
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const cryptoPath = path.join(__dirname, '..', 'server', 'src', 'utils', 'crypto.ts');
+
+// Funzione per crittografare i dati della licenza
+function encryptLicenseData(data) {
+    try {
+        // Converti l'oggetto in una stringa JSON
+        const jsonString = JSON.stringify(data);
+        
+        // Chiave segreta per la crittografia
+        const SECRET_KEY = 'slabslink-license-encryption-key-2024';
+        const IV_LENGTH = 16; // Per AES, la lunghezza dell'IV è sempre 16 byte
+        const ALGORITHM = 'aes-256-cbc';
+        
+        // Genera un IV casuale
+        const iv = crypto.randomBytes(IV_LENGTH);
+        
+        // Crea una chiave derivata dalla chiave segreta usando SHA-256
+        const key = crypto.createHash('sha256').update(SECRET_KEY).digest();
+        
+        // Crea il cipher con l'algoritmo AES-256-CBC
+        const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+        
+        // Crittografa i dati
+        let encrypted = cipher.update(jsonString, 'utf8', 'base64');
+        encrypted += cipher.final('base64');
+        
+        // Combina IV e dati crittografati in un'unica stringa
+        const result = iv.toString('base64') + ':' + encrypted;
+        
+        return result;
+    } catch (error) {
+        console.error('Errore durante la crittografia dei dati:', error);
+        throw new Error('Impossibile crittografare i dati della licenza');
+    }
+}
 
 class LicenseGenerator {
     constructor() {
@@ -183,9 +226,18 @@ async function runCLI() {
                             features: license.features
                         };
 
+                        // Crittografa i dati della licenza
+                        const encryptedData = encryptLicenseData(licenseInfo);
+                        
+                        // Crea un oggetto wrapper che contiene i dati crittografati
+                        const licenseFileContent = {
+                            encrypted: true,
+                            data: encryptedData
+                        };
+
                         const fileName = `license-${license.key}.json`;
-                        fs.writeFileSync(fileName, JSON.stringify(licenseInfo, null, 2));
-                        console.log(`License information saved to ${fileName}`);
+                        fs.writeFileSync(fileName, JSON.stringify(licenseFileContent, null, 2));
+                        console.log(`License information saved to ${fileName} (encrypted)`);
                         displayMenu();
                     } catch (error) {
                         console.error('Error generating license:', error);

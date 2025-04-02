@@ -348,49 +348,31 @@ const Settings: React.FC = () => {
     }
     
     try {
-      const fileReader = new FileReader();
+      // Utilizziamo FormData per inviare il file direttamente al server
+      // In questo modo il server gestirà la decrittografia
+      const formData = new FormData();
+      formData.append('licenseFile', uploadedLicenseFile);
       
-      fileReader.onload = async (e) => {
-        try {
-          const content = e.target?.result as string;
-          const licenseData = JSON.parse(content);
-          
-          if (!licenseData.key || !licenseData.expirationDate || !licenseData.features) {
-            setLicenseUpdateError('Il file di licenza non è valido. Mancano campi obbligatori.');
-            return;
-          }
-          
-          const response = await axios.post(`${API_BASE_URL}/license/update`, { 
-            licenseKey: licenseData.key,
-            expirationDate: licenseData.expirationDate,
-            features: licenseData.features
-          });
-          
-          if (response.data.success) {
-            setLicenseUpdateSuccess(true);
-            setLicenseUpdateError(null);
-            setUploadedLicenseFile(null);
-            
-            // Refresh license info
-            fetchLicenseInfo();
-            
-            setTimeout(() => {
-              setLicenseUpdateSuccess(false);
-            }, 3000);
-          } else {
-            setLicenseUpdateError(response.data.message || 'Errore durante l\'aggiornamento della licenza');
-          }
-        } catch (error) {
-          console.error('Errore durante la lettura del file di licenza:', error);
-          setLicenseUpdateError('Il file selezionato non è un file JSON valido.');
+      const response = await axios.post(`${API_BASE_URL}/license/import`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
         }
-      };
+      });
       
-      fileReader.onerror = () => {
-        setLicenseUpdateError('Errore durante la lettura del file.');
-      };
-      
-      fileReader.readAsText(uploadedLicenseFile);
+      if (response.data.success) {
+        setLicenseUpdateSuccess(true);
+        setLicenseUpdateError(null);
+        setUploadedLicenseFile(null);
+        
+        // Refresh license info
+        fetchLicenseInfo();
+        
+        setTimeout(() => {
+          setLicenseUpdateSuccess(false);
+        }, 3000);
+      } else {
+        setLicenseUpdateError(response.data.message || 'Errore durante l\'aggiornamento della licenza');
+      }
     } catch (error: any) {
       console.error('Errore durante l\'aggiornamento della licenza:', error);
       setLicenseUpdateError(error.response?.data?.message || 'Errore durante l\'aggiornamento della licenza');
