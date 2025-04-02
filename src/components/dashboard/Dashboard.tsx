@@ -11,6 +11,7 @@ import Sidebar from '../common/Sidebar';
 import axios from 'axios';
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, getDate } from 'date-fns';
 import { it } from 'date-fns/locale';
+import { formatDate } from '../../utils';
 
 import HomeIcon from '@mui/icons-material/Home';
 import SettingsIcon from '@mui/icons-material/Settings';
@@ -690,9 +691,9 @@ const Dashboard: React.FC = () => {
                           </Typography>
                           <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
                             <Typography variant="body2">
-                              {new Date(appointment.appointment_date).toLocaleDateString('it-IT')}
+                              {formatDate(appointment.appointment_date || appointment.date)}
                             </Typography>
-                            <Typography variant="body2">{appointment.appointment_time}</Typography>
+                            <Typography variant="body2">{appointment.appointment_time || appointment.time}</Typography>
                           </Box>
                         </Box>
                         <Button size="small" color="primary" onClick={() => handleAppointmentDetails(appointment.id)}>Dettagli</Button>
