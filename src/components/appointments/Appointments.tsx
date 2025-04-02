@@ -43,6 +43,7 @@ import { DatePicker } from '@mui/x-date-pickers';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { it } from 'date-fns/locale';
+import { addMinutes } from 'date-fns';
 import axios from 'axios';
 import AppointmentForm from './AppointmentForm';
 import { styled } from '@mui/material/styles';
@@ -512,7 +513,25 @@ const Appointments: React.FC = () => {
                           <Box sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
                             <TimeIcon fontSize="small" sx={{ mr: 1, color: 'primary.main' }} />
                             <Typography variant="body2">
-                              {appointment.appointment_time || appointment.time || 'Orario non specificato'}
+                              {(() => {
+                                const startTime = appointment.appointment_time || appointment.time;
+                                if (!startTime) return 'Orario non specificato';
+                                
+                                // Calcola l'ora di fine aggiungendo la durata all'ora di inizio
+                                try {
+                                  const [hours, minutes] = startTime.split(':').map(Number);
+                                  const startDate = new Date();
+                                  startDate.setHours(hours, minutes, 0);
+                                  
+                                  const endDate = addMinutes(startDate, appointment.duration);
+                                  const endTime = `${endDate.getHours().toString().padStart(2, '0')}:${endDate.getMinutes().toString().padStart(2, '0')}`;
+                                  
+                                  return `${startTime} - ${endTime}`;
+                                } catch (error) {
+                                  console.error('Error calculating end time:', error);
+                                  return startTime;
+                                }
+                              })()}
                             </Typography>
                           </Box>
                           
