@@ -2093,6 +2093,7 @@ export class GoogleCalendarService {
     this.log('info', 'Estrazione informazioni utente dalle note dell\'evento');
     
     const userInfo: {
+      //paziente?: string;
       fullName?: string;
       email?: string;
       phone?: string;
@@ -2109,7 +2110,9 @@ export class GoogleCalendarService {
     // Estrai il nome completo
     const nameMatch = description.match(/<b>Prenotato da<\/b>\s*([^<]+)/);
     if (nameMatch && nameMatch[1]) {
+      //userInfo.paziente = nameMatch[1].trim();
       userInfo.fullName = nameMatch[1].trim();
+      
       this.log('info', `Nome estratto: ${userInfo.fullName}`);
     }
     
@@ -2187,13 +2190,18 @@ export class GoogleCalendarService {
     
     // Estrai nome e cognome
     let firstName = '';
+    let lastNameFull = '';
     let lastName = '';
     
     if (userInfo.fullName) {
       const nameParts = userInfo.fullName.split(' ');
       if (nameParts.length >= 2) {
         firstName = nameParts[0];
-        lastName = nameParts.slice(1).join(' ');
+        //lastName = nameParts[1];
+        lastNameFull = nameParts.slice(1).join(' ');
+        lastName = lastNameFull.split('\n')[0];
+        this.log('info', `Nome e cognome estratti: ${firstName} ${lastName}`);
+        this.log('info','prova trim: '+lastName)
       } else if (nameParts.length === 1) {
         firstName = nameParts[0];
         lastName = '';
@@ -2250,8 +2258,43 @@ export class GoogleCalendarService {
     }
     
     // Gestisci sia eventi con dateTime (con orario) che date (solo giorno)
-    const startTime = new Date(event.start.dateTime || `${event.start.date}T00:00:00`);
-    const endTime = new Date(event.end.dateTime || `${event.end.date}T23:59:59`);
+    // Correggiamo il problema del fuso orario utilizzando le date originali e preservando l'orario esatto
+    let startTime: Date;
+    let endTime: Date;
+    
+    if (event.start.dateTime) {
+      // Utilizziamo Date.parse per ottenere il timestamp UTC e poi creiamo una data preservando l'orario originale
+      const startDateTimeStr = event.start.dateTime;
+      const startTimestamp = Date.parse(startDateTimeStr);
+      startTime = new Date(startTimestamp);
+      
+      // Log per debug del fuso orario
+      this.log('info', 'Data di inizio originale e parsata', {
+        original: startDateTimeStr,
+        parsed: startTime.toISOString(),
+        localTime: startTime.toString()
+      });
+    } else {
+      // Se abbiamo solo una data, impostiamo l'ora a 00:00:00
+      startTime = new Date(`${event.start.date}T00:00:00`);
+    }
+    
+    if (event.end.dateTime) {
+      // Utilizziamo Date.parse per ottenere il timestamp UTC e poi creiamo una data preservando l'orario originale
+      const endDateTimeStr = event.end.dateTime;
+      const endTimestamp = Date.parse(endDateTimeStr);
+      endTime = new Date(endTimestamp);
+      
+      // Log per debug del fuso orario
+      this.log('info', 'Data di fine originale e parsata', {
+        original: endDateTimeStr,
+        parsed: endTime.toISOString(),
+        localTime: endTime.toString()
+      });
+    } else {
+      // Se abbiamo solo una data, impostiamo l'ora a 23:59:59
+      endTime = new Date(`${event.end.date}T23:59:59`);
+    }
     
     // Verifica che le date siano valide
     if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
@@ -2265,7 +2308,7 @@ export class GoogleCalendarService {
     }
     
     // Estrai il nome del paziente dal titolo dell'evento
-    const patientName = event.summary?.replace('Appuntamento: ', '') || '';
+    const patientName = event.summary?.replace('Appuntamento: ', '').replace(' (', '').replace(')','') || '';
     
     // Estrai informazioni dell'utente dalle note dell'evento
     let patientId: number | undefined = undefined;
@@ -2304,22 +2347,59 @@ export class GoogleCalendarService {
     const durationMinutes = Math.round(durationMs / (1000 * 60));
     
     // Formatta data e ora
-    const date = startTime.toISOString().split('T')[0]; // YYYY-MM-DD
-    const time = startTime.toISOString().split('T')[1].substring(0, 5); // HH:MM
+    // Estrai i componenti della data direttamente dalla stringa ISO per evitare conversioni di fuso orario
+    // Questo garantisce che l'orario visualizzato sia esattamente quello specificato in Google Calendar
+    let year, month, day, hours, minutes;
+    
+    if (event.start.dateTime) {
+      // Parsing manuale della stringa ISO 8601 (formato: YYYY-MM-DDTHH:MM:SS+OFFSET)
+      const isoDateMatch = event.start.dateTime.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+      if (isoDateMatch) {
+        [, year, month, day, hours, minutes] = isoDateMatch;
+      } else {
+        // Fallback nel caso il pattern non corrisponda
+        year = startTime.getUTCFullYear();
+        month = String(startTime.getUTCMonth() + 1).padStart(2, '0');
+        day = String(startTime.getUTCDate()).padStart(2, '0');
+        hours = String(startTime.getUTCHours()).padStart(2, '0');
+        minutes = String(startTime.getUTCMinutes()).padStart(2, '0');
+      }
+    } else {
+      // Per eventi di tutto il giorno
+      year = startTime.getUTCFullYear();
+      month = String(startTime.getUTCMonth() + 1).padStart(2, '0');
+      day = String(startTime.getUTCDate()).padStart(2, '0');
+      hours = "00";
+      minutes = "00";
+    }
+    
+    const date = `${year}-${month}-${day}`;
+    const time = `${hours}:${minutes}`;
+    
+    this.log('info', 'Orario appuntamento formattato', {
+      originalDateTime: event.start.dateTime || event.start.date,
+      formattedDate: date,
+      formattedTime: time
+    });
+    
+    // Determina lo stato dell'appuntamento (scheduled per default)
+    const status = 'scheduled';
     
     const stmt = this.db.prepare(
-      'INSERT INTO appointments (patient_id, date, time, notes, title, duration, google_calendar_event_id, synced, sync_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO appointments (patient_id, date, time, notes, title, duration, google_calendar_event_id, synced, sync_status, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     const result = stmt.run(
       patientId, 
       date, 
       time, 
-      event.description || '',
+      //event.description || '',
+      '',
       patientName,
       durationMinutes,
       event.id || null,
       1, // già sincronizzato
-      'synced'
+      'synced',
+      status
     );
 
     return {
@@ -2330,12 +2410,14 @@ export class GoogleCalendarService {
       end_time: endTime.toISOString(), // Aggiungi end_time richiesto dall'interfaccia
       date: date,
       time: time,
-      notes: event.description || '',
+      notes: '',
+      //notes: event.description || '',
       title: patientName,
       duration: durationMinutes,
       google_calendar_event_id: event.id || null,
       synced: 1,
-      sync_status: 'synced'
+      sync_status: 'synced',
+      status: status
     };
   }
 

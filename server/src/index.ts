@@ -18,6 +18,7 @@ import { googleCalendarRoutes } from './routes/google-calendar.routes';
 import { checkDatabaseConnection } from './config/database-sqlite';
 import { runSqliteMigrations } from './db/migrations/sqlite-migrations';
 import { GoogleCalendarService } from './services/google-calendar.service';
+import { appointmentStatusService } from './services/appointment-status.service';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -143,6 +144,19 @@ const startServer = async () => {
         }
       } catch (error) {
         console.error(`[${new Date().toISOString()}] Errore durante la sincronizzazione da Google Calendar:`, error);
+      }
+    });
+    
+    // Configura l'aggiornamento automatico dello stato degli appuntamenti scaduti
+    // Esegui il controllo ogni 5 minuti
+    cron.schedule('*/5 * * * *', async () => {
+      console.log(`[${new Date().toISOString()}] Avvio controllo appuntamenti scaduti`);
+      try {
+        // Aggiorna gli appuntamenti scaduti
+        const updatedCount = await appointmentStatusService.updateExpiredAppointments();
+        console.log(`[${new Date().toISOString()}] Controllo appuntamenti scaduti completato: ${updatedCount} appuntamenti aggiornati`);
+      } catch (error) {
+        console.error(`[${new Date().toISOString()}] Errore durante il controllo degli appuntamenti scaduti:`, error);
       }
     });
   } catch (error) {

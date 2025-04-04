@@ -537,6 +537,8 @@ export class GoogleCalendarWatchService extends GoogleCalendarService {
         break;
       }
     }
+
+    this.log('info', `Nome del paziente estratto dall'evento: ${patientName}`);
     
     // Rimuovi eventuali email dal nome del paziente
     patientName = patientName.replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '');
