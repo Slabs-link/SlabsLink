@@ -554,6 +554,7 @@ export const syncAppointmentWithGoogleCalendar = async (appointmentId: number, n
 export const getAppointmentsByPatientId = async (req: Request, res: Response) => {
   try {
     const { patientId } = req.params;
+    let pId = patientId + '.0';
     console.log('getAppointmentsByPatientId called with patientId:', patientId);
     
     // Validate patientId is a number
@@ -567,11 +568,11 @@ export const getAppointmentsByPatientId = async (req: Request, res: Response) =>
       SELECT a.*, u.first_name || ' ' || u.last_name as patient_name, u.first_name, u.last_name,
              t.name as appointment_type_name, t.id as appointment_type_id
       FROM appointments a
-      JOIN users u ON a.patient_id = u.id
+      JOIN users u ON a.patient_id = u.id OR a.patient_id = CAST(u.id AS TEXT)
       LEFT JOIN appointment_types t ON a.appointment_type_id = t.id
-      WHERE a.patient_id = ?
+      WHERE a.patient_id = ? OR a.patient_id = CAST(? AS TEXT)
       ORDER BY a.date, a.time
-    `).all(patientId);
+    `).all(pId, pId);
     
     // Formatta le date prima di inviarle al frontend
     const formattedAppointments = appointments.map((appointment: any) => {

@@ -7,6 +7,10 @@ import {
   getWhatsappSettings,
   getCalendarSettings
 } from '../controllers/settings-sqlite.controller';
+import {
+  getMedicalOfficeSettings,
+  updateMedicalOfficeSettings
+} from '../controllers/medical-office-settings.controller';
 
 const router = express.Router();
 
@@ -18,6 +22,12 @@ router.get('/whatsapp', getWhatsappSettings);
 
 // Get calendar settings
 router.get('/calendar', getCalendarSettings);
+
+// Get medical office settings
+router.get('/medical-office', getMedicalOfficeSettings);
+
+// Update medical office settings
+router.post('/medical-office', updateMedicalOfficeSettings);
 
 // Get setting by key
 router.get('/:key', getSettingByKey);

@@ -14,6 +14,7 @@ import appointmentTypesRoutes from './routes/appointment-types.routes';
 import settingsRoutes from './routes/settings.routes';
 import licenseRoutes from './routes/license.routes';
 import backupsRoutes from './routes/backups.routes';
+import userFilesRoutes from './routes/user-files.routes';
 import { googleCalendarRoutes } from './routes/google-calendar.routes';
 import { checkDatabaseConnection } from './config/database-sqlite';
 import { runSqliteMigrations } from './db/migrations/sqlite-migrations';
@@ -63,6 +64,8 @@ app.use('/api/license', licenseRoutes);
 app.use('/api/google-calendar', googleCalendarRoutes);
 // Register backup routes
 app.use('/api/backups', backupsRoutes);
+// Register user files routes
+app.use('/api/user-files', userFilesRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

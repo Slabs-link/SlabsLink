@@ -10,6 +10,7 @@ import appointmentsRoutes from './appointments.routes';
 import settingsRoutes from './settings.routes';
 import { googleCalendarRoutes } from './google-calendar.routes';
 import backupsRoutes from './backups.routes';
+import userFilesRoutes from './user-files.routes';
 
 const router = express.Router();
 
@@ -23,6 +24,7 @@ router.get('/routes-test', (req, res) => {
 router.use('/users', usersRoutes);
 router.use('/templates', templatesRoutes);
 router.use('/notifications', notificationsRoutes);
+router.use('/user-files', userFilesRoutes);
 
 // Comuni routes
 router.use('/comuni', comuniRoutes);

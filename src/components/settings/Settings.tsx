@@ -11,6 +11,7 @@ import { GoogleCalendarTestSettings } from './GoogleCalendarTestSettings';
 import { useLocation } from 'react-router-dom';
 import GoogleCalendarSelector from './GoogleCalendarSelector';
 import FileFolderPicker from '../common/FileFolderPicker';
+import MedicalOfficeSettings from './MedicalOfficeSettings';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -157,6 +158,13 @@ const Settings: React.FC = () => {
   
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
+  };
+  
+  // Calcola l'indice della scheda dello studio medico
+  const getMedicalOfficeTabIndex = () => {
+    // Calcola l'indice in base alle schede attive
+    let index = getAppointmentTypesTabIndex() + 1; // Dopo i tipi di appuntamento
+    return index;
   };
   
   const handleWhatsappSettingsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -558,6 +566,7 @@ const Settings: React.FC = () => {
                 {licenseFeatures.googleCalendarIntegration && <Tab label="Google Calendar" />}
                 {licenseFeatures.googleCalendarIntegration && <Tab label="Test Google Calendar" />}
                 <Tab label="Tipi di appuntamento" />
+                <Tab label="Studio Medico" />
                 <Tab label="Backup" />
               </Tabs>
             </Box>
@@ -1131,8 +1140,13 @@ const Settings: React.FC = () => {
             
 
             
-            {/* Backup Settings */}
+            {/* Medical Office Settings */}
             <TabPanel value={tabValue} index={getAppointmentTypesTabIndex() + 1}>
+              <MedicalOfficeSettings />
+            </TabPanel>
+
+            {/* Backup Settings */}
+            <TabPanel value={tabValue} index={getAppointmentTypesTabIndex() + 2}>
               <BackupSettings />
             </TabPanel>
           </Paper>

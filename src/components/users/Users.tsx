@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Box, 
   Typography, 
@@ -22,7 +22,8 @@ import {
   Select,
   MenuItem,
   Container,
-  CircularProgress
+  CircularProgress,
+  Tooltip
 } from '@mui/material';
 import { 
   Add as AddIcon, 
@@ -46,6 +47,8 @@ import { it } from 'date-fns/locale';
 import UserForm, { User } from './UserForm';
 import Sidebar from '../common/Sidebar';
 import UsersCard from './UsersCard';
+import UserAppointments from './UserAppointments';
+import UserFiles from './UserFiles';
 import { styled } from '@mui/material/styles';
 
 // Remove duplicate User type definition and use the imported one
@@ -193,10 +196,37 @@ const Users = () => {
   });
   // Stato per il caricamento
   const [loading, setLoading] = useState(true);
+  // Stato per le impostazioni dello studio medico
+  const [officeSettings, setOfficeSettings] = useState({
+    showInfoTab: true,
+    enableUserFileUpload: false,
+    userFilesPath: 'uploads/users'
+  });
+
+  // Carica le impostazioni dello studio medico
+  const fetchOfficeSettings = useCallback(async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/settings/medical-office`);
+      console.log('Impostazioni studio medico ricevute:', response.data);
+      if (response.data) {
+        const newSettings = {
+          showInfoTab: response.data.showInfoTab !== undefined ? response.data.showInfoTab : true,
+          enableUserFileUpload: response.data.enableUserFileUpload || false,
+          userFilesPath: response.data.userFilesPath || 'uploads/users'
+        };
+        console.log('Impostazioni aggiornate:', newSettings);
+        setOfficeSettings(newSettings);
+      }
+    } catch (error) {
+      console.error('Errore nel caricamento delle impostazioni dello studio:', error);
+      // Manteniamo i valori predefiniti in caso di errore
+    }
+  }, []);
 
   useEffect(() => {
     fetchUsers();
-  }, []);
+    fetchOfficeSettings();
+  }, [fetchOfficeSettings]);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -247,6 +277,39 @@ const Users = () => {
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
   };
+  
+  // Effetto per gestire correttamente il tab quando cambiano le impostazioni o si apre il dialog
+  useEffect(() => {
+    if (selectedUser && openViewDialog) {
+      // Quando si apre il dialog dei dettagli utente, imposta il tab a 0 (prima scheda disponibile)
+      setTabValue(0);
+    }
+  }, [selectedUser, openViewDialog]);
+  
+  // Effetto per assicurarsi che il tab sia valido quando cambia showInfoTab
+  useEffect(() => {
+    // Se la scheda Informazioni viene disabilitata e siamo su quella scheda, passa alla prima scheda disponibile
+    if (!officeSettings.showInfoTab && tabValue === 0) {
+      setTabValue(0); // Mantieni il valore 0 ma ora rappresenta Storico Appuntamenti
+    }
+  }, [officeSettings.showInfoTab, tabValue]);
+
+
+  // Calcola l'indice effettivo delle schede in base alle impostazioni
+  const getTabIndex = (baseIndex: number) => {
+    if (!officeSettings.showInfoTab && baseIndex > 0) {
+      return baseIndex - 1;
+    }
+    return baseIndex;
+  };
+  
+  // Calcola l'indice inverso delle schede (da visualizzato a reale)
+  const getRealTabIndex = (displayIndex: number) => {
+    if (!officeSettings.showInfoTab) {
+      return displayIndex + 1;
+    }
+    return displayIndex;
+  };
 
   const handleSaveUser = async (userData: Partial<User>) => {
     try {
@@ -268,7 +331,7 @@ const Users = () => {
         await axios.post('http://localhost:3001/api/users', userData);
       }
       
-      fetchUsers();
+await fetchUsers(); // Call fetchUsers with await since it's an async function
       handleCloseDialog();
     } catch (error: any) {
       console.error('Error saving user:', error);
@@ -601,64 +664,90 @@ const Users = () => {
                 <Grid item xs={12} md={8}>
                   <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
                     <Tabs value={tabValue} onChange={handleTabChange} aria-label="user details tabs">
-                      <Tab label="Informazioni" id="user-tab-0" aria-controls="user-tabpanel-0" />
+                      {officeSettings.showInfoTab && (
+                        <Tab label="Informazioni" id="user-tab-0" aria-controls="user-tabpanel-0" />
+                      )}
+                      <Tab 
+                        label="Storico Appuntamenti" 
+                        id={officeSettings.showInfoTab ? "user-tab-1" : "user-tab-0"}
+                        aria-controls={officeSettings.showInfoTab ? "user-tabpanel-1" : "user-tabpanel-0"}
+                      />
+                      <Tab 
+                        label="Documenti" 
+                        id={officeSettings.showInfoTab ? "user-tab-2" : "user-tab-1"}
+                        aria-controls={officeSettings.showInfoTab ? "user-tabpanel-2" : "user-tabpanel-1"}
+                      />
                     </Tabs>
                   </Box>
                   
                   {/* Medical Information Tab */}
-                  <TabPanel value={tabValue} index={0}>
-                    <Grid container spacing={2}>
-                      <Grid item xs={12}>
-                        <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-                          <MedicalServicesIcon sx={{ mr: 1, verticalAlign: 'middle', color: 'primary.main' }} />
-                          Storia Medica
-                        </Typography>
-                        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
-                          <Typography variant="body1">
-                            {selectedUser.medical_history || 'Nessuna informazione disponibile'}
+                  {officeSettings.showInfoTab && (
+                    <TabPanel value={tabValue} index={0}>
+                      <Grid container spacing={2}>
+                        <Grid item xs={12}>
+                          <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+                            <MedicalServicesIcon sx={{ mr: 1, verticalAlign: 'middle', color: 'primary.main' }} />
+                            Storia Medica
                           </Typography>
-                        </Paper>
-                      </Grid>
-                      
-                      <Grid item xs={12}>
-                        <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-                          <HealthAndSafetyIcon sx={{ mr: 1, verticalAlign: 'middle', color: 'primary.main' }} />
-                          Allergie
-                        </Typography>
-                        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
-                          <Typography variant="body1">
-                            {selectedUser.allergies || 'Nessuna allergia registrata'}
+                          <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+                            <Typography variant="body1">
+                              {selectedUser.medical_history || 'Nessuna informazione disponibile'}
+                            </Typography>
+                          </Paper>
+                        </Grid>
+                        
+                        <Grid item xs={12}>
+                          <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+                            <HealthAndSafetyIcon sx={{ mr: 1, verticalAlign: 'middle', color: 'primary.main' }} />
+                            Allergie
                           </Typography>
-                        </Paper>
-                      </Grid>
-                      
-                      <Grid item xs={12}>
-                        <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-                          <MedicationIcon sx={{ mr: 1, verticalAlign: 'middle', color: 'primary.main' }} />
-                          Farmaci
-                        </Typography>
-                        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
-                          <Typography variant="body1">
-                            {selectedUser.medications || 'Nessun farmaco registrato'}
+                          <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+                            <Typography variant="body1">
+                              {selectedUser.allergies || 'Nessuna allergia registrata'}
+                            </Typography>
+                          </Paper>
+                        </Grid>
+                        
+                        <Grid item xs={12}>
+                          <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+                            <MedicationIcon sx={{ mr: 1, verticalAlign: 'middle', color: 'primary.main' }} />
+                            Farmaci
                           </Typography>
-                        </Paper>
-                      </Grid>
-                      
-                      <Grid item xs={12}>
-                        <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-                          <NoteIcon sx={{ mr: 1, verticalAlign: 'middle', color: 'primary.main' }} />
-                          Note
-                        </Typography>
-                        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
-                          <Typography variant="body1">
-                            {selectedUser.notes || 'Nessuna nota disponibile'}
+                          <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+                            <Typography variant="body1">
+                              {selectedUser.medications || 'Nessun farmaco registrato'}
+                            </Typography>
+                          </Paper>
+                        </Grid>
+                        
+                        <Grid item xs={12}>
+                          <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+                            <NoteIcon sx={{ mr: 1, verticalAlign: 'middle', color: 'primary.main' }} />
+                            Note
                           </Typography>
-                        </Paper>
+                          <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+                            <Typography variant="body1">
+                              {selectedUser.notes || 'Nessuna nota disponibile'}
+                            </Typography>
+                          </Paper>
+                        </Grid>
                       </Grid>
-                    </Grid>
+                    </TabPanel>
+                  )}
+                  
+                  {/* Appointments Tab */}
+                  <TabPanel value={tabValue} index={officeSettings.showInfoTab ? 1 : 0}>
+                    {selectedUser && selectedUser.id && (
+                      <UserAppointments userId={selectedUser.id} />
+                    )}
                   </TabPanel>
                   
-                  {/* La scheda Appuntamenti è stata rimossa */}
+                  {/* Documents Tab */}
+                  <TabPanel value={tabValue} index={officeSettings.showInfoTab ? 2 : 1}>
+                    {selectedUser && selectedUser.id && (
+                      <UserFiles userId={selectedUser.id} />
+                    )}
+                  </TabPanel>
                 </Grid>
               </Grid>
             )}
