@@ -39,4 +39,11 @@ export interface CalendarSettings {
     sundayStart: string;
     sundayEnd: string;
   };
+  lastSyncFromGoogle?: string;
+  lastSyncStats?: {
+    importati: number;
+    aggiornati: number;
+    saltati: number;
+    totale: number;
+  };
 }

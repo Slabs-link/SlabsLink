@@ -1,7 +1,11 @@
 import { Request, Response } from 'express';
 import { GoogleCalendarService } from '../services/google-calendar.service';
+import { GoogleCalendarWatchService } from '../services/google-calendar-watch.service';
 import { getDatabase } from '../config/database-sqlite';
 import { v4 as uuidv4 } from 'uuid';
+
+// Istanza del servizio Google Calendar Watch
+const googleCalendarWatchService = new GoogleCalendarWatchService();
 
 // Istanza del servizio Google Calendar
 const googleCalendarService = new GoogleCalendarService();
@@ -9,6 +13,33 @@ const googleCalendarService = new GoogleCalendarService();
 // Function to log messages
 const logMessage = (message: string, data?: any) => {
   console.log(`[Google Calendar Controller] ${message}`, data ? data : '');
+};
+
+/**
+ * Genera e restituisce un link di prenotazione per Google Calendar
+ * @param req - Express request object
+ * @param res - Express response object
+ */
+export const getBookingLink = async (req: Request, res: Response) => {
+  try {
+    logMessage('Generazione link di prenotazione per Google Calendar');
+    
+    // Genera il link di prenotazione
+    const bookingLink = await googleCalendarWatchService.generateBookingLink();
+    
+    return res.json({ 
+      success: true, 
+      bookingLink: bookingLink,
+      message: 'Link di prenotazione generato con successo'
+    });
+  } catch (error) {
+    logMessage(`Errore durante la generazione del link di prenotazione: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    return res.status(500).json({ 
+      success: false, 
+      error: 'Impossibile generare il link di prenotazione',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
 };
 
 /**
@@ -355,6 +386,45 @@ export const checkIntegrationStatus = async (req: Request, res: Response) => {
     logMessage(`Error checking integration status: ${error instanceof Error ? error.message : 'Unknown error'}`);
     res.status(500).json({ 
       error: 'Failed to check integration status',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+};
+
+/**
+ * Sincronizza gli eventi da Google Calendar verso SlabsLink
+ * @param req - Express request object
+ * @param res - Express response object
+ */
+export const syncFromGoogleCalendar = async (req: Request, res: Response) => {
+  try {
+    logMessage('Sincronizzazione manuale degli eventi da Google Calendar verso SlabsLink');
+    
+    // Verifica se il servizio è abilitato e autenticato
+    const isEnabled = await googleCalendarService.isServiceEnabled();
+    const isAuthenticated = isEnabled ? await googleCalendarService.isServiceAuthenticated() : false;
+    
+    if (!isEnabled || !isAuthenticated) {
+      return res.status(400).json({
+        success: false,
+        message: `Sincronizzazione non possibile: servizio ${!isEnabled ? 'non abilitato' : 'non autenticato'}`
+      });
+    }
+    
+    // Esegui la sincronizzazione da Google Calendar a SlabsLink
+    await googleCalendarService.syncEventsFromGoogleCalendar();
+    
+    logMessage('Sincronizzazione da Google Calendar a SlabsLink completata con successo');
+    
+    res.json({
+      success: true,
+      message: 'Sincronizzazione da Google Calendar completata con successo'
+    });
+  } catch (error) {
+    logMessage(`Errore durante la sincronizzazione da Google Calendar: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    res.status(500).json({ 
+      success: false,
+      error: 'Errore durante la sincronizzazione da Google Calendar',
       details: error instanceof Error ? error.message : 'Unknown error'
     });
   }

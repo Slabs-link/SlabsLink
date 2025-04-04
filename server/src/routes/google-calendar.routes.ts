@@ -1,6 +1,6 @@
 import express from 'express';
 import { Router, Request, Response } from 'express';
-import { getAuthUrl, handleAuthCallback, handleWebhook, setupWebhook, getCalendarEvents, syncAppointments, testSyncAppointment, checkIntegrationStatus } from '../controllers/google-calendar.controller';
+import { getAuthUrl, handleAuthCallback, handleWebhook, setupWebhook, getCalendarEvents, syncAppointments, testSyncAppointment, checkIntegrationStatus, getBookingLink, syncFromGoogleCalendar } from '../controllers/google-calendar.controller';
 import { getAvailableCalendars, setSelectedCalendar } from '../controllers/google-calendar-management.controller';
 import { createCalendar } from '../controllers/google-calendar-create.controller';
 import { GoogleCalendarService } from '../services/google-calendar.service';
@@ -43,6 +43,12 @@ router.get('/test-sync/:appointmentId', testSyncAppointment);
 
 // Endpoint per verificare lo stato dell'integrazione
 router.get('/status', checkIntegrationStatus);
+
+// Endpoint per ottenere il link di prenotazione
+router.get('/booking-link', getBookingLink);
+
+// Endpoint per sincronizzare gli eventi da Google Calendar verso SlabsLink
+router.post('/sync-from-google', syncFromGoogleCalendar);
 
 // Funzione per creare un appuntamento da un evento di Google Calendar
 async function createAppointmentFromEvent(eventData: calendar_v3.Schema$Event) {

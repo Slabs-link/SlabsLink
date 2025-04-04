@@ -30,7 +30,7 @@ export class GoogleCalendarService {
    * @param message - Messaggio da loggare
    * @param data - Dati aggiuntivi opzionali
    */
-  private log(level: 'info' | 'warn' | 'error', message: string, data?: any): void {
+  protected log(level: 'info' | 'warn' | 'error', message: string, data?: any): void {
     const timestamp = new Date().toISOString();
     const prefix = `[GoogleCalendarService][${timestamp}][${level.toUpperCase()}]`;
     
@@ -69,7 +69,7 @@ export class GoogleCalendarService {
   /**
    * Recupera le impostazioni del calendario dal database
    */
-  private async getCalendarSettings(): Promise<CalendarSettings | null> {
+  protected async getCalendarSettings(): Promise<CalendarSettings | null> {
     try {
       this.log('info', 'Recupero delle impostazioni del calendario dal database');
       this.db = getDatabase();
@@ -1978,7 +1978,14 @@ export class GoogleCalendarService {
       }
       
       this.db = getDatabase();
-    if (!this.db) throw new Error('Database connection failed');
+      if (!this.db) throw new Error('Database connection failed');
+      
+      // Ottieni le impostazioni del calendario per determinare quale calendario utilizzare
+      const settings = await this.getCalendarSettings();
+      // Usa il calendario selezionato nelle impostazioni, se disponibile, altrimenti usa 'primary'
+      const calendarId = settings?.selectedCalendarId || 'primary';
+      
+      this.log('info', `Sincronizzazione eventi dal calendario: ${calendarId}`);
       
       // Ottieni gli eventi da Google Calendar (ultimi 30 giorni e prossimi 90 giorni)
       const now = new Date();
@@ -1986,7 +1993,7 @@ export class GoogleCalendarService {
       const timeMax = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString();
       
       const response = await this.calendar.events.list({
-        calendarId: 'primary',
+        calendarId: calendarId,
         timeMin,
         timeMax,
         singleEvents: true,
@@ -1995,10 +2002,20 @@ export class GoogleCalendarService {
       
       const events = response.data.items || [];
       
+      this.log('info', `Trovati ${events.length} eventi nel calendario ${calendarId}`);
+      
+      let eventiImportati = 0;
+      let eventiAggiornati = 0;
+      let eventiSaltati = 0;
+      
       for (const event of events) {
-        if (!event.id || !event.start || !event.start.dateTime) {
+        if (!event.id) {
+          this.log('warn', 'Evento senza ID saltato');
+          eventiSaltati++;
           continue;
         }
+        
+        // Non filtriamo più per event.start.dateTime, gestiamo entrambi i formati di data
         
         // Verifica se l'evento esiste già nel database
         const existingAppointment = (await this.db.prepare(
@@ -2008,15 +2025,215 @@ export class GoogleCalendarService {
         if (existingAppointment) {
           // Aggiorna l'appuntamento esistente solo se non è già sincronizzato
           if (!existingAppointment.synced) {
-            this.updateAppointmentFromEvent(existingAppointment.id, event);
+            try {
+              await this.updateAppointmentFromEvent(existingAppointment.id, event);
+              this.log('info', `Aggiornato appuntamento esistente con ID: ${existingAppointment.id} da evento: ${event.id}`);
+              eventiAggiornati++;
+            } catch (updateError) {
+              this.log('error', `Errore durante l'aggiornamento dell'appuntamento ${existingAppointment.id}`, updateError);
+              eventiSaltati++;
+            }
+          } else {
+            this.log('info', `Appuntamento ${existingAppointment.id} già sincronizzato, nessun aggiornamento necessario`);
+            eventiSaltati++;
           }
         } else {
           // Crea un nuovo appuntamento
-          this.createAppointmentInDatabase(event);
+          try {
+            const newAppointment = await this.createAppointmentInDatabase(event);
+            this.log('info', `Creato nuovo appuntamento con ID: ${newAppointment.id} da evento: ${event.id}`);
+            eventiImportati++;
+          } catch (createError) {
+            this.log('error', `Errore durante la creazione dell'appuntamento da evento ${event.id}`, createError);
+            eventiSaltati++;
+          }
         }
       }
+      
+      // Log dettagliato dei risultati della sincronizzazione
+      this.log('info', `Sincronizzazione completata: ${eventiImportati} eventi importati, ${eventiAggiornati} eventi aggiornati, ${eventiSaltati} eventi saltati`);
+      
+      // Aggiorna le statistiche di sincronizzazione nelle impostazioni
+      try {
+        const settings = await this.getCalendarSettings();
+        if (settings) {
+          settings.lastSyncFromGoogle = new Date().toISOString();
+          settings.lastSyncStats = {
+            importati: eventiImportati,
+            aggiornati: eventiAggiornati,
+            saltati: eventiSaltati,
+            totale: events.length
+          };
+          
+          const jsonSettings = JSON.stringify(settings);
+          this.db.prepare('UPDATE app_settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?')
+            .run(jsonSettings, 'calendar');
+        }
+      } catch (statsError) {
+        this.log('warn', 'Impossibile aggiornare le statistiche di sincronizzazione', statsError);
+      }
     } catch (error) {
-      console.error('Errore durante la sincronizzazione degli eventi da Google Calendar:', error);
+      this.log('error', 'Errore durante la sincronizzazione degli eventi da Google Calendar:', error);
+    }
+  }
+
+  /**
+   * Estrae informazioni dell'utente dalle note dell'evento di Google Calendar
+   * @param description - Descrizione dell'evento (note)
+   * @returns Informazioni dell'utente estratte
+   */
+  private extractUserInfoFromEventDescription(description: string): {
+    fullName?: string;
+    email?: string;
+    phone?: string;
+    birthDate?: string;
+    birthCity?: string;
+    fiscalCode?: string;
+  } {
+    this.log('info', 'Estrazione informazioni utente dalle note dell\'evento');
+    
+    const userInfo: {
+      fullName?: string;
+      email?: string;
+      phone?: string;
+      birthDate?: string;
+      birthCity?: string;
+      fiscalCode?: string;
+    } = {};
+    
+    if (!description) {
+      this.log('warn', 'Nessuna descrizione disponibile nell\'evento');
+      return userInfo;
+    }
+    
+    // Estrai il nome completo
+    const nameMatch = description.match(/<b>Prenotato da<\/b>\s*([^<]+)/);
+    if (nameMatch && nameMatch[1]) {
+      userInfo.fullName = nameMatch[1].trim();
+      this.log('info', `Nome estratto: ${userInfo.fullName}`);
+    }
+    
+    // Estrai l'email
+    const emailMatch = description.match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9._-]+)/);
+    if (emailMatch && emailMatch[1]) {
+      userInfo.email = emailMatch[1].trim();
+      this.log('info', `Email estratta: ${userInfo.email}`);
+    }
+    
+    // Estrai il numero di telefono
+    const phoneMatch = description.match(/([0-9]{10})/);
+    if (phoneMatch && phoneMatch[1]) {
+      userInfo.phone = phoneMatch[1].trim();
+      this.log('info', `Telefono estratto: ${userInfo.phone}`);
+    }
+    
+    // Estrai la data di nascita
+    const birthDateMatch = description.match(/<b>data di nascita<\/b>\s*([^<]+)/);
+    if (birthDateMatch && birthDateMatch[1]) {
+      userInfo.birthDate = birthDateMatch[1].trim();
+      this.log('info', `Data di nascita estratta: ${userInfo.birthDate}`);
+    }
+    
+    // Estrai la città di nascita
+    const birthCityMatch = description.match(/<b>città di nascita<\/b>\s*([^<]+)/);
+    if (birthCityMatch && birthCityMatch[1]) {
+      userInfo.birthCity = birthCityMatch[1].trim();
+      this.log('info', `Città di nascita estratta: ${userInfo.birthCity}`);
+    }
+    
+    // Estrai il codice fiscale
+    const fiscalCodeMatch = description.match(/<b>codice fiscale<\/b>\s*([^<\s]+)/);
+    if (fiscalCodeMatch && fiscalCodeMatch[1]) {
+      userInfo.fiscalCode = fiscalCodeMatch[1].trim();
+      this.log('info', `Codice fiscale estratto: ${userInfo.fiscalCode}`);
+    }
+    
+    return userInfo;
+  }
+  
+  /**
+   * Crea o trova un utente basato sulle informazioni estratte dalle note dell'evento
+   * @param userInfo - Informazioni dell'utente estratte
+   * @returns ID dell'utente creato o trovato
+   */
+  private async createOrFindUserFromEventInfo(userInfo: {
+    fullName?: string;
+    email?: string;
+    phone?: string;
+    birthDate?: string;
+    birthCity?: string;
+    fiscalCode?: string;
+  }): Promise<number | undefined> {
+    if (!this.db) throw new Error('Database non inizializzato');
+    
+    // Se abbiamo un codice fiscale, verifichiamo se esiste già un utente con questo codice
+    if (userInfo.fiscalCode) {
+      this.log('info', `Verifica esistenza utente con codice fiscale: ${userInfo.fiscalCode}`);
+      const existingUser = this.db.prepare(
+        'SELECT id FROM users WHERE fiscal_code = ? LIMIT 1'
+      ).get(userInfo.fiscalCode) as { id: number } | undefined;
+      
+      if (existingUser) {
+        this.log('info', `Utente esistente trovato con ID: ${existingUser.id}`);
+        return existingUser.id;
+      }
+    }
+    
+    // Se non abbiamo trovato un utente con il codice fiscale e non abbiamo abbastanza informazioni per crearne uno nuovo
+    if (!userInfo.fullName) {
+      this.log('warn', 'Informazioni insufficienti per creare un nuovo utente');
+      return undefined;
+    }
+    
+    // Estrai nome e cognome
+    let firstName = '';
+    let lastName = '';
+    
+    if (userInfo.fullName) {
+      const nameParts = userInfo.fullName.split(' ');
+      if (nameParts.length >= 2) {
+        firstName = nameParts[0];
+        lastName = nameParts.slice(1).join(' ');
+      } else if (nameParts.length === 1) {
+        firstName = nameParts[0];
+        lastName = '';
+      }
+    }
+    
+    // Formatta la data di nascita se presente (da DD/MM/YYYY a YYYY-MM-DD)
+    let formattedBirthDate: string | null = null;
+    if (userInfo.birthDate) {
+      const parts = userInfo.birthDate.split('/');
+      if (parts.length === 3) {
+        formattedBirthDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+      }
+    }
+    
+    // Crea un nuovo utente
+    this.log('info', 'Creazione nuovo utente con le informazioni estratte');
+    try {
+      const stmt = this.db.prepare(`
+        INSERT INTO users (
+          first_name, last_name, email, phone, birth_date, birth_city, fiscal_code, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `);
+      
+      const result = stmt.run(
+        firstName,
+        lastName,
+        userInfo.email || null,
+        userInfo.phone || null,
+        formattedBirthDate,
+        userInfo.birthCity || null,
+        userInfo.fiscalCode || null
+      );
+      
+      const newUserId = result.lastInsertRowid as number;
+      this.log('info', `Nuovo utente creato con ID: ${newUserId}`);
+      return newUserId;
+    } catch (error) {
+      this.log('error', 'Errore durante la creazione del nuovo utente', error);
+      return undefined;
     }
   }
 
@@ -2025,33 +2242,107 @@ export class GoogleCalendarService {
    */
   private async createAppointmentInDatabase(event: calendar_v3.Schema$Event): Promise<Appointment> {
     if (!this.db) throw new Error('Database non inizializzato');
-    const startTime = new Date(event.start?.dateTime || '');
-    const endTime = new Date(event.end?.dateTime || '');
-
+    
+    // Verifica che l'evento abbia date valide
+    if (!event.start || (!event.start.dateTime && !event.start.date) || !event.end || (!event.end.dateTime && !event.end.date)) {
+      this.log('error', 'Evento con date mancanti o non valide', { eventId: event.id, summary: event.summary });
+      throw new Error('Evento con date mancanti o non valide');
+    }
+    
+    // Gestisci sia eventi con dateTime (con orario) che date (solo giorno)
+    const startTime = new Date(event.start.dateTime || `${event.start.date}T00:00:00`);
+    const endTime = new Date(event.end.dateTime || `${event.end.date}T23:59:59`);
+    
+    // Verifica che le date siano valide
+    if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
+      this.log('error', 'Date dell\'evento non valide', { 
+        eventId: event.id, 
+        summary: event.summary,
+        startDate: event.start.dateTime || event.start.date,
+        endDate: event.end.dateTime || event.end.date
+      });
+      throw new Error('Date dell\'evento non valide');
+    }
+    
+    // Estrai il nome del paziente dal titolo dell'evento
+    const patientName = event.summary?.replace('Appuntamento: ', '') || '';
+    
+    // Estrai informazioni dell'utente dalle note dell'evento
+    let patientId: number | undefined = undefined;
+    
+    if (event.description) {
+      this.log('info', 'Evento con descrizione trovato, tentativo di estrazione informazioni utente');
+      const userInfo = this.extractUserInfoFromEventDescription(event.description);
+      
+      // Se abbiamo estratto informazioni utili, tenta di creare o trovare l'utente
+      if (userInfo.fiscalCode || userInfo.fullName) {
+        patientId = await this.createOrFindUserFromEventInfo(userInfo);
+        this.log('info', `Utente associato all'appuntamento con ID: ${patientId || 'non trovato'}`);
+      }
+    }
+    
+    // Se non abbiamo trovato un utente dalle note, cerca per nome come fallback
+    if (!patientId && patientName && patientName !== 'Paziente senza nome') {
+      const nameParts = patientName.split(' ');
+      if (nameParts.length >= 2) {
+        const firstName = nameParts[0];
+        const lastName = nameParts.slice(1).join(' ');
+        
+        const userResult = this.db.prepare(
+          'SELECT id FROM users WHERE first_name LIKE ? AND last_name LIKE ? LIMIT 1'
+        ).get(`${firstName}%`, `${lastName}%`) as { id: number } | undefined;
+        
+        if (userResult) {
+          patientId = userResult.id;
+          this.log('info', `Utente trovato per nome: ${patientName}, ID: ${patientId}`);
+        }
+      }
+    }
+    
+    // Calcola la durata in minuti
+    const durationMs = endTime.getTime() - startTime.getTime();
+    const durationMinutes = Math.round(durationMs / (1000 * 60));
+    
+    // Formatta data e ora
+    const date = startTime.toISOString().split('T')[0]; // YYYY-MM-DD
+    const time = startTime.toISOString().split('T')[1].substring(0, 5); // HH:MM
+    
     const stmt = this.db.prepare(
-      'INSERT INTO appointments (patient_name, start_time, end_time, notes) VALUES (?, ?, ?, ?)'
+      'INSERT INTO appointments (patient_id, date, time, notes, title, duration, google_calendar_event_id, synced, sync_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     const result = stmt.run(
-      event.summary?.replace('Appuntamento: ', '') || '', 
-      startTime.toISOString(), 
-      endTime.toISOString(), 
-      event.description || ''
+      patientId, 
+      date, 
+      time, 
+      event.description || '',
+      patientName,
+      durationMinutes,
+      event.id || null,
+      1, // già sincronizzato
+      'synced'
     );
 
     return {
       id: result.lastInsertRowid ? Number(result.lastInsertRowid) : 0,
-      patient_name: event.summary?.replace('Appuntamento: ', '') || '',
-      start_time: startTime.toISOString(),
-      end_time: endTime.toISOString(),
+      patient_id: patientId,
+      patient_name: patientName, // per compatibilità con l'interfaccia
+      start_time: startTime.toISOString(), // Aggiungi start_time richiesto dall'interfaccia
+      end_time: endTime.toISOString(), // Aggiungi end_time richiesto dall'interfaccia
+      date: date,
+      time: time,
       notes: event.description || '',
-      google_calendar_event_id: event.id || null
+      title: patientName,
+      duration: durationMinutes,
+      google_calendar_event_id: event.id || null,
+      synced: 1,
+      sync_status: 'synced'
     };
   }
 
   /**
    * Aggiorna un appuntamento da un evento di Google Calendar
    */
-  private async updateAppointmentFromEvent(appointmentId: number | undefined, event: calendar_v3.Schema$Event): Promise<void> {
+  protected async updateAppointmentFromEvent(appointmentId: number | undefined, event: calendar_v3.Schema$Event): Promise<void> {
     try {
       this.db = getDatabase();
       if (!this.db) throw new Error('Database connection failed');

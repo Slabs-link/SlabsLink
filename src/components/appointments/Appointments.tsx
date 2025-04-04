@@ -37,7 +37,8 @@ import {
   AccessTime as TimeIcon,
   Notes as NotesIcon,
   Search as SearchIcon,
-  FilterAlt as FilterIcon
+  FilterAlt as FilterIcon,
+  Sync as SyncIcon
 } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -134,6 +135,9 @@ const Appointments: React.FC = () => {
     message: '',
     severity: 'info'
   });
+  
+  // Stato per la sincronizzazione
+  const [syncing, setSyncing] = useState(false);
   
   // Stato per i filtri
   const [filters, setFilters] = useState<FilterOptions>({
@@ -336,6 +340,45 @@ const Appointments: React.FC = () => {
   const handleCloseNotification = () => {
     setNotification(prev => ({ ...prev, open: false }));
   };
+  
+  // Funzione per sincronizzare manualmente gli eventi da Google Calendar
+  const handleSyncFromGoogleCalendar = async () => {
+    try {
+      setSyncing(true);
+      setNotification({
+        open: true,
+        message: 'Sincronizzazione da Google Calendar in corso...',
+        severity: 'info'
+      });
+      
+      const response = await axios.post('http://localhost:3001/api/google-calendar/sync-from-google');
+      
+      if (response.data.success) {
+        setNotification({
+          open: true,
+          message: 'Sincronizzazione da Google Calendar completata con successo',
+          severity: 'success'
+        });
+        // Aggiorna la lista degli appuntamenti
+        fetchAppointments();
+      } else {
+        setNotification({
+          open: true,
+          message: response.data.message || 'Errore durante la sincronizzazione da Google Calendar',
+          severity: 'error'
+        });
+      }
+    } catch (error) {
+      console.error('Errore durante la sincronizzazione da Google Calendar:', error);
+      setNotification({
+        open: true,
+        message: 'Errore durante la sincronizzazione da Google Calendar',
+        severity: 'error'
+      });
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   // Funzione per formattare la data
   const formatDate = (dateString: string) => {
@@ -393,17 +436,30 @@ const Appointments: React.FC = () => {
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
             <SectionTitle variant="h4">Gestione Appuntamenti</SectionTitle>
             
-            <Button
-              variant="contained"
-              startIcon={<AddIcon />}
-              onClick={() => {
-                setSelectedAppointment(null);
-                setOpenFormDialog(true);
-              }}
-              sx={{ whiteSpace: 'nowrap' }}
-            >
-              Nuovo Appuntamento
-            </Button>
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <Button
+                variant="outlined"
+                color="primary"
+                startIcon={<SyncIcon />}
+                onClick={handleSyncFromGoogleCalendar}
+                disabled={syncing}
+                sx={{ whiteSpace: 'nowrap' }}
+              >
+                {syncing ? 'Sincronizzazione...' : 'Sincronizza da Google Calendar'}
+              </Button>
+              
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={() => {
+                  setSelectedAppointment(null);
+                  setOpenFormDialog(true);
+                }}
+                sx={{ whiteSpace: 'nowrap' }}
+              >
+                Nuovo Appuntamento
+              </Button>
+            </Box>
           </Box>
           
           {/* Filtri */}

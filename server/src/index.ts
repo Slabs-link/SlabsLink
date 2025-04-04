@@ -14,6 +14,7 @@ import appointmentTypesRoutes from './routes/appointment-types.routes';
 import settingsRoutes from './routes/settings.routes';
 import licenseRoutes from './routes/license.routes';
 import backupsRoutes from './routes/backups.routes';
+import { googleCalendarRoutes } from './routes/google-calendar.routes';
 import { checkDatabaseConnection } from './config/database-sqlite';
 import { runSqliteMigrations } from './db/migrations/sqlite-migrations';
 import { GoogleCalendarService } from './services/google-calendar.service';
@@ -57,8 +58,7 @@ app.use('/api/appointment-types', appointmentTypesRoutes);
 app.use('/api/settings', settingsRoutes);
 // Registro licenseRoutes separatamente
 app.use('/api/license', licenseRoutes);
-import { googleCalendarRoutes } from './routes/google-calendar.routes';
-// ... existing code ...
+// Registro Google Calendar routes
 app.use('/api/google-calendar', googleCalendarRoutes);
 // Register backup routes
 app.use('/api/backups', backupsRoutes);
@@ -122,6 +122,27 @@ const startServer = async () => {
         }
       } catch (error) {
         console.error(`[${new Date().toISOString()}] Errore durante la sincronizzazione automatica:`, error);
+      }
+    });
+    
+    // Configura la sincronizzazione da Google Calendar a SlabsLink
+    // Esegui la sincronizzazione ogni 10 minuti
+    cron.schedule('*/10 * * * *', async () => {
+      console.log(`[${new Date().toISOString()}] Avvio sincronizzazione eventi da Google Calendar a SlabsLink`);
+      try {
+        // Verifica se il servizio è abilitato e autenticato
+        const isEnabled = await googleCalendarService.isServiceEnabled();
+        const isAuthenticated = isEnabled ? await googleCalendarService.isServiceAuthenticated() : false;
+        
+        if (isEnabled && isAuthenticated) {
+          // Esegui la sincronizzazione da Google Calendar a SlabsLink
+          await googleCalendarService.syncEventsFromGoogleCalendar();
+          console.log(`[${new Date().toISOString()}] Sincronizzazione da Google Calendar a SlabsLink completata`);
+        } else {
+          console.log(`[${new Date().toISOString()}] Sincronizzazione da Google Calendar saltata: servizio ${!isEnabled ? 'non abilitato' : 'non autenticato'}`);
+        }
+      } catch (error) {
+        console.error(`[${new Date().toISOString()}] Errore durante la sincronizzazione da Google Calendar:`, error);
       }
     });
   } catch (error) {

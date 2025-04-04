@@ -7,6 +7,7 @@ export interface Appointment {
   notes?: string;
   google_calendar_event_id?: string | null;
   synced?: number | boolean;
+  sync_status?: string;
   notification_sent?: number | boolean;
   status?: string;
   appointment_type_id?: number | null;
