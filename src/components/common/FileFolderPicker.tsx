@@ -14,6 +14,7 @@ interface FileFolderPickerProps {
   fullWidth?: boolean;
   helperText?: string;
   error?: boolean;
+  directoryOnly?: boolean; // Nuovo parametro per forzare la selezione di directory
 }
 
 /**
@@ -29,7 +30,8 @@ const FileFolderPicker: React.FC<FileFolderPickerProps> = ({
   disabled = false,
   fullWidth = true,
   helperText,
-  error = false
+  error = false,
+  directoryOnly = false
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [displayValue, setDisplayValue] = useState<string>(value || '');
@@ -43,14 +45,33 @@ const FileFolderPicker: React.FC<FileFolderPickerProps> = ({
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (files && files.length > 0) {
-      // In un'applicazione web standard, possiamo ottenere solo il nome del file, non il percorso completo
-      // per motivi di sicurezza. In un'applicazione Electron, sarebbe possibile ottenere il percorso completo.
-      const filePath = files[0].name;
-      
-      // Nota: in un'applicazione web, questo mostrerà solo il nome del file selezionato
-      // e non il percorso completo per motivi di sicurezza del browser
-      setDisplayValue(filePath);
-      onChange(filePath);
+      // Per le cartelle, utilizziamo un approccio diverso
+      if (isFolder) {
+        // Per le cartelle, utilizziamo il percorso completo se disponibile
+        // o il percorso relativo come fallback
+        let folderPath = '';
+        
+        // In Electron, possiamo ottenere il percorso completo
+        if (event.target.value) {
+          folderPath = event.target.value;
+        } 
+        // Altrimenti, utilizziamo il percorso relativo dal primo file
+        else if (files[0].webkitRelativePath) {
+          folderPath = files[0].webkitRelativePath.split('/')[0];
+        }
+        // Se tutto fallisce, utilizziamo il nome del primo file
+        else {
+          folderPath = files[0].name;
+        }
+        
+        setDisplayValue(folderPath);
+        onChange(folderPath);
+      } else {
+        // Per i file, utilizziamo l'approccio standard
+        const filePath = files[0].name;
+        setDisplayValue(filePath);
+        onChange(filePath);
+      }
     }
   };
 
@@ -94,10 +115,10 @@ const FileFolderPicker: React.FC<FileFolderPickerProps> = ({
         accept={accept}
         // Il webkitdirectory è un attributo non standard supportato da Chrome, Edge e Firefox
         // che permette di selezionare cartelle invece di file
-        {...(isFolder ? { webkitdirectory: '', directory: '' } : {})}
+        {...((isFolder || directoryOnly) ? { webkitdirectory: '', directory: '', mozdirectory: '' } : {})}
         disabled={disabled}
       />
-      {isFolder && (
+      {(isFolder || directoryOnly) && (
         <Typography variant="caption" color="text.secondary">
           Nota: La selezione di cartelle potrebbe non funzionare in tutti i browser. In caso di problemi, inserisci manualmente il percorso.
         </Typography>

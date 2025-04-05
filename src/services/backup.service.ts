@@ -17,5 +17,14 @@ export const backupService = {
   
   deleteBackup: async (backup: string) => {
     return await axios.delete(`${API_BASE_URL}/backups/${encodeURIComponent(backup)}`);
+  },
+  
+  // Nuove funzioni per il backup automatico
+  getAutoBackupSettings: async () => {
+    return await axios.get(`${API_BASE_URL}/settings/auto-backup`);
+  },
+  
+  saveAutoBackupSettings: async (settings: { enabled: boolean, frequency: number, maxBackups: number }) => {
+    return await axios.post(`${API_BASE_URL}/settings/auto-backup`, settings);
   }
 };

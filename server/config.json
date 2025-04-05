@@ -9,5 +9,8 @@
   "whatsappDataPath": "C:\\Users\\Ciro Latela\\AppData\\Local\\SlabsLink\\WhatsAppData",
   "googleClientId": "dd",
   "googleClientSecret": "dd",
-  "googleRedirectUri": "dd"
+  "googleRedirectUri": "dd",
+  "backupEnabled": true,
+  "maxBackups": 5,
+  "backupFrequencyHours": 24
 }

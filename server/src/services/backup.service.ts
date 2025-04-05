@@ -109,23 +109,43 @@ export class BackupService {
     if (!this.backupEnabled) return;
 
     let backupInterval: number;
-    switch(this.backupFrequency) {
-      case 'daily':
-        backupInterval = 24 * 60 * 60 * 1000;
-        break;
-      case 'weekly':
-        backupInterval = 7 * 24 * 60 * 60 * 1000;
-        break;
-      case 'monthly':
-        backupInterval = 30 * 24 * 60 * 60 * 1000;
-        break;
-      default:
-        backupInterval = 24 * 60 * 60 * 1000;
+    
+    // Verifica se esiste un'impostazione di frequenza in ore
+    const hourlyFrequency = await appSettings.get('backupFrequencyHours');
+    
+    if (hourlyFrequency && !isNaN(Number(hourlyFrequency))) {
+      // Usa la frequenza in ore se disponibile
+      backupInterval = Number(hourlyFrequency) * 60 * 60 * 1000;
+      console.log(`Backup automatico pianificato ogni ${hourlyFrequency} ore`);
+    } else {
+      // Altrimenti usa la frequenza tradizionale (daily, weekly, monthly)
+      switch(this.backupFrequency) {
+        case 'daily':
+          backupInterval = 24 * 60 * 60 * 1000;
+          break;
+        case 'weekly':
+          backupInterval = 7 * 24 * 60 * 60 * 1000;
+          break;
+        case 'monthly':
+          backupInterval = 30 * 24 * 60 * 60 * 1000;
+          break;
+        default:
+          backupInterval = 24 * 60 * 60 * 1000;
+      }
+      console.log(`Backup automatico pianificato con frequenza: ${this.backupFrequency}`);
     }
 
     setInterval(async () => {
       try {
+        // Verifica se il backup è ancora abilitato prima di eseguirlo
+        const isEnabled = await appSettings.get('backupEnabled');
+        if (isEnabled === false) {
+          console.log('Backup automatico disabilitato, salto l\'esecuzione pianificata');
+          return;
+        }
+        
         await this.createDatabaseBackup();
+        console.log(`Backup automatico eseguito con successo alle ${new Date().toISOString()}`);
       } catch (err) {
         console.error('Scheduled backup failed:', err);
       }
@@ -145,6 +165,11 @@ export class BackupService {
   setBackupPath(path: string) {
     this.backupDir = path;
     appSettings.set('backupPath', path);
+  }
+
+  setMaxBackups(maxBackups: number) {
+    this.maxBackups = maxBackups;
+    appSettings.set('maxBackups', maxBackups);
   }
 }
 

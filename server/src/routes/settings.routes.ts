@@ -11,6 +11,10 @@ import {
   getMedicalOfficeSettings,
   updateMedicalOfficeSettings
 } from '../controllers/medical-office-settings.controller';
+import {
+  getAutoBackupSettings,
+  updateAutoBackupSettings
+} from '../controllers/auto-backup-settings.controller';
 
 const router = express.Router();
 
@@ -28,6 +32,12 @@ router.get('/medical-office', getMedicalOfficeSettings);
 
 // Update medical office settings
 router.post('/medical-office', updateMedicalOfficeSettings);
+
+// Get auto backup settings
+router.get('/auto-backup', getAutoBackupSettings);
+
+// Update auto backup settings
+router.post('/auto-backup', updateAutoBackupSettings);
 
 // Get setting by key
 router.get('/:key', getSettingByKey);

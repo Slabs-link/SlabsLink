@@ -7,7 +7,6 @@ import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import Sidebar from '../common/Sidebar';
 import { BackupSettings } from './BackupSettings';
-import { GoogleCalendarTestSettings } from './GoogleCalendarTestSettings';
 import { useLocation } from 'react-router-dom';
 import GoogleCalendarSelector from './GoogleCalendarSelector';
 import FileFolderPicker from '../common/FileFolderPicker';
@@ -78,8 +77,7 @@ const Settings: React.FC = () => {
     enabled: false,
     browserPath: '',
     dataPath: '',
-    autoReply: false,
-    autoReplyMessage: '',
+    // Rimozione delle opzioni di messaggi automatici come richiesto
     // Nuovi campi per WhatsApp Business API
     useBusinessApi: false,
     apiToken: '',
@@ -153,6 +151,12 @@ const Settings: React.FC = () => {
     followUpMessage: 'Grazie per la tua visita. Come ti senti dopo l\'appuntamento?'
   });
   
+  // Studio medico settings state (spostato dalla scheda dedicata)
+  const [settings, setSettings] = useState({
+    showInfoTab: true,
+    userFilesPath: 'uploads/users'
+  });
+  
   // Stato per l'espansione della guida di Google Calendar
   const [guideExpanded, setGuideExpanded] = useState(false);
   
@@ -160,12 +164,7 @@ const Settings: React.FC = () => {
     setTabValue(newValue);
   };
   
-  // Calcola l'indice della scheda dello studio medico
-  const getMedicalOfficeTabIndex = () => {
-    // Calcola l'indice in base alle schede attive
-    let index = getAppointmentTypesTabIndex() + 1; // Dopo i tipi di appuntamento
-    return index;
-  };
+  // Funzione rimossa poiché la scheda studio medico è stata integrata nelle impostazioni generali
   
   const handleWhatsappSettingsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
@@ -210,6 +209,23 @@ const Settings: React.FC = () => {
       ...notificationSettings,
       [e.target.name]: value
     });
+  };
+  
+  // Funzioni per gestire le impostazioni dello studio medico
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setSettings(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+  
+  const handleSwitchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, checked } = e.target;
+    setSettings(prev => ({
+      ...prev,
+      [name]: checked
+    }));
   };
   
   const handleNewAppointmentTypeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -315,7 +331,7 @@ const Settings: React.FC = () => {
   const getAppointmentTypesTabIndex = () => {
     let index = 1; // Licenza è sempre l'indice 0
     if (licenseFeatures.whatsappIntegration) index++;
-    if (licenseFeatures.googleCalendarIntegration) index += 2; // +2 perché ora abbiamo sia la scheda Google Calendar che la scheda Test Google Calendar
+    if (licenseFeatures.googleCalendarIntegration) index++; // +1 per la scheda Google Calendar
     return index;
   };
   
@@ -450,6 +466,15 @@ const Settings: React.FC = () => {
         if (appointmentTypesResponse.data) {
           setAppointmentTypes(appointmentTypesResponse.data);
         }
+        
+        // Carica le impostazioni dello studio medico
+        const medicalOfficeResponse = await axios.get(`${API_BASE_URL}/settings/medical-office`);
+        if (medicalOfficeResponse.data) {
+          setSettings({
+            showInfoTab: medicalOfficeResponse.data.showInfoTab !== undefined ? medicalOfficeResponse.data.showInfoTab : true,
+            userFilesPath: medicalOfficeResponse.data.userFilesPath || 'uploads/users'
+          });
+        }
       } catch (error) {
         console.error('Errore durante il caricamento delle impostazioni:', error);
         // Se le impostazioni non esistono, utilizziamo i valori predefiniti
@@ -495,14 +520,15 @@ const Settings: React.FC = () => {
         await axios.put(`${API_BASE_URL}/settings/calendar`, calendarSettings);
       }
       
-      // Mostra il messaggio di successo WhatsApp
-      await axios.put(`${API_BASE_URL}/settings/whatsapp`, whatsappSettings);
-      
-      // Salva le impostazioni del calendario
-      await axios.put(`${API_BASE_URL}/settings/calendar`, calendarSettings);
-      
       // Salva le impostazioni delle notifiche
       await axios.put(`${API_BASE_URL}/settings/notifications`, notificationSettings);
+      
+      // Salva le impostazioni dello studio medico
+      await axios.post(`${API_BASE_URL}/settings/medical-office`, settings, {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
       
       // Mostra il messaggio di successo
       setSaveSuccess(true);
@@ -561,19 +587,17 @@ const Settings: React.FC = () => {
           <Paper sx={{ mb: 4, borderRadius: '8px' }}>
             <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
               <Tabs value={tabValue} onChange={handleTabChange} aria-label="settings tabs">
-                <Tab label="Licenza" />
+                <Tab label="Impostazioni Generali" />
                 {licenseFeatures.whatsappIntegration && <Tab label="WhatsApp" />}
                 {licenseFeatures.googleCalendarIntegration && <Tab label="Google Calendar" />}
-                {licenseFeatures.googleCalendarIntegration && <Tab label="Test Google Calendar" />}
                 <Tab label="Tipi di appuntamento" />
-                <Tab label="Studio Medico" />
                 <Tab label="Backup" />
               </Tabs>
             </Box>
             
-            {/* License Settings */}
+            {/* Impostazioni Generali (ex License Settings) */}
             <TabPanel value={tabValue} index={0}>
-              <Typography variant="h6" gutterBottom>Informazioni Licenza</Typography>
+              <Typography variant="h6" gutterBottom>Informazioni Generali</Typography>
               
               <Grid container spacing={3} sx={{ mb: 4 }}>
                 <Grid item xs={12} md={6}>
@@ -601,6 +625,38 @@ const Settings: React.FC = () => {
                   </Paper>
                 </Grid>
                 
+                {/* Impostazioni Studio Medico (spostate qui dalla scheda dedicata) */}
+                <Grid item xs={12} md={6}>
+                  <Paper sx={{ p: 2, height: '100%' }}>
+                    <Typography variant="subtitle1" fontWeight="bold" gutterBottom>Impostazioni Studio Medico</Typography>
+                    
+                    <Box sx={{ mt: 2 }}>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={settings?.showInfoTab}
+                            onChange={handleSwitchChange}
+                            name="showInfoTab"
+                            color="primary"
+                          />
+                        }
+                        label="Mostra scheda Informazioni nei dettagli utente"
+                      />
+                      
+                      <TextField
+                        fullWidth
+                        label="Percorso File Utenti"
+                        name="userFilesPath"
+                        value={settings?.userFilesPath || 'uploads/users'}
+                        onChange={handleInputChange}
+                        variant="outlined"
+                        margin="normal"
+                        helperText="Percorso relativo per i file degli utenti. Verrà creata una cartella per ogni utente."
+                      />
+                    </Box>
+                  </Paper>
+                </Grid>
+                
                 <Grid item xs={12} md={6}>
                   <Paper sx={{ p: 2, height: '100%' }}>
                     <Typography variant="subtitle1" fontWeight="bold" gutterBottom>Funzionalità Abilitate</Typography>
@@ -623,6 +679,38 @@ const Settings: React.FC = () => {
                     </Box>
                   </Paper>
                 </Grid>
+                
+                {/* Impostazioni Studio Medico (spostate qui dalla scheda dedicata) }
+                <Grid item xs={12} md={6}>
+                  <Paper sx={{ p: 2, height: '100%' }}>
+                    <Typography variant="subtitle1" fontWeight="bold" gutterBottom>Impostazioni Studio Medico</Typography>
+                    
+                    <Box sx={{ mt: 2 }}>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={settings?.showInfoTab}
+                            onChange={handleSwitchChange}
+                            name="showInfoTab"
+                            color="primary"
+                          />
+                        }
+                        label="Mostra scheda Informazioni nei dettagli utente"
+                      />
+                      
+                      <TextField
+                        fullWidth
+                        label="Percorso File Utenti"
+                        name="userFilesPath"
+                        value={settings?.userFilesPath || 'uploads/users'}
+                        onChange={handleInputChange}
+                        variant="outlined"
+                        margin="normal"
+                        helperText="Percorso relativo per i file degli utenti. Verrà creata una cartella per ogni utente."
+                      />
+                    </Box>
+                  </Paper>
+                </Grid>*/}
               </Grid>
               
               <Divider sx={{ my: 4 }} />
@@ -677,6 +765,38 @@ const Settings: React.FC = () => {
                     </Button>
                   </Paper>
                 </Grid>
+                
+                {/* Impostazioni Studio Medico (spostate qui dalla scheda dedicata) }
+                <Grid item xs={12} md={6}>
+                  <Paper sx={{ p: 2, height: '100%' }}>
+                    <Typography variant="subtitle1" fontWeight="bold" gutterBottom>Impostazioni Studio Medico</Typography>
+                    
+                    <Box sx={{ mt: 2 }}>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={settings?.showInfoTab}
+                            onChange={handleSwitchChange}
+                            name="showInfoTab"
+                            color="primary"
+                          />
+                        }
+                        label="Mostra scheda Informazioni nei dettagli utente"
+                      />
+                      
+                      <TextField
+                        fullWidth
+                        label="Percorso File Utenti"
+                        name="userFilesPath"
+                        value={settings?.userFilesPath || 'uploads/users'}
+                        onChange={handleInputChange}
+                        variant="outlined"
+                        margin="normal"
+                        helperText="Percorso relativo per i file degli utenti. Verrà creata una cartella per ogni utente."
+                      />
+                    </Box>
+                  </Paper>
+                </Grid>*/}
               </Grid>
             </TabPanel>
             
@@ -784,34 +904,7 @@ const Settings: React.FC = () => {
                   )}
                 </Paper>
                 
-                <Paper sx={{ p: 3 }}>
-                  <Typography variant="subtitle1" fontWeight="bold" gutterBottom>Opzioni messaggi</Typography>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={whatsappSettings.autoReply}
-                        onChange={handleWhatsappSettingsChange}
-                        name="autoReply"
-                        disabled={!whatsappSettings.enabled}
-                      />
-                    }
-                    label="Abilita risposta automatica"
-                    sx={{ mb: 2 }}
-                  />
-                  
-                  <TextField
-                    fullWidth
-                    label="Messaggio di risposta automatica"
-                    name="autoReplyMessage"
-                    value={whatsappSettings.autoReplyMessage}
-                    onChange={handleWhatsappSettingsChange}
-                    margin="normal"
-                    multiline
-                    rows={4}
-                    disabled={!whatsappSettings.enabled || !whatsappSettings.autoReply}
-                    placeholder="Grazie per il tuo messaggio. Ti risponderemo al più presto."
-                  />
-                </Paper>
+                {/* Rimuovo la sezione "Opzioni messaggi" come richiesto */}
               </TabPanel>
             )}
             
@@ -1072,11 +1165,11 @@ const Settings: React.FC = () => {
             )}
             
             {/* Google Calendar Test Settings - Visible only if license allows */}
-            {licenseFeatures.googleCalendarIntegration && (
+            {/*licenseFeatures.googleCalendarIntegration && (
               <TabPanel value={tabValue} index={licenseFeatures.whatsappIntegration ? 3 : 2}>
                 <GoogleCalendarTestSettings />
               </TabPanel>
-            )}
+            )*/}
             
             {/* Appointment Types Settings */}
             <TabPanel value={tabValue} index={getAppointmentTypesTabIndex()}>
@@ -1140,14 +1233,14 @@ const Settings: React.FC = () => {
             
 
             
-            {/* Medical Office Settings */}
+            {/* Backup Settings */}
             <TabPanel value={tabValue} index={getAppointmentTypesTabIndex() + 1}>
-              <MedicalOfficeSettings />
+              <BackupSettings />
             </TabPanel>
 
-            {/* Backup Settings */}
+            {/* Medical Office Settings */}
             <TabPanel value={tabValue} index={getAppointmentTypesTabIndex() + 2}>
-              <BackupSettings />
+              <MedicalOfficeSettings />
             </TabPanel>
           </Paper>
         </Container>

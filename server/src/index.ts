@@ -78,6 +78,9 @@ app.use((req, res, next) => {
   next();
 });
 
+// Importo il servizio di backup
+import { backupService } from './services/backup.service';
+
 // Inizializza il database e avvia il server
 const startServer = async () => {
   try {
@@ -162,6 +165,28 @@ const startServer = async () => {
         console.error(`[${new Date().toISOString()}] Errore durante il controllo degli appuntamenti scaduti:`, error);
       }
     });
+    
+    // Configura i backup automatici del database
+    // Inizializza il servizio di backup e pianifica i backup automatici
+    console.log(`[${new Date().toISOString()}] Inizializzazione del servizio di backup automatico`);
+    try {
+      // Attiva la pianificazione dei backup automatici
+      await backupService.scheduleBackups();
+      console.log(`[${new Date().toISOString()}] Servizio di backup automatico inizializzato con successo`);
+      
+      // Esegui un backup iniziale all'avvio del server
+      cron.schedule('*/1440 * * * *', async () => {
+        console.log(`[${new Date().toISOString()}] Avvio backup automatico del database`);
+        try {
+          await backupService.createDatabaseBackup();
+          console.log(`[${new Date().toISOString()}] Backup automatico completato con successo`);
+        } catch (error) {
+          console.error(`[${new Date().toISOString()}] Errore durante il backup automatico:`, error);
+        }
+      });
+    } catch (error) {
+      console.error(`[${new Date().toISOString()}] Errore durante l'inizializzazione del servizio di backup:`, error);
+    }
   } catch (error) {
     console.error('Errore durante l\'avvio del server:', error);
     process.exit(1);

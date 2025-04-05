@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Button, Card, Divider, List, ListItem, ListItemText, ListItemSecondaryAction, Typography, Box, Select, MenuItem, FormControl, InputLabel, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions, Paper, IconButton, Stack, Alert, Snackbar, CircularProgress } from '@mui/material';
-import { Backup as BackupIcon, Delete as DeleteIcon, Restore as RestoreIcon, Refresh as RefreshIcon } from '@mui/icons-material';
+import { Button, Card, Divider, List, ListItem, ListItemText, ListItemSecondaryAction, Typography, Box, Select, MenuItem, FormControl, InputLabel, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions, Paper, IconButton, Stack, Alert, Snackbar, CircularProgress, Switch, FormControlLabel, TextField, Grid } from '@mui/material';
+import { Backup as BackupIcon, Delete as DeleteIcon, Restore as RestoreIcon, Refresh as RefreshIcon, Schedule as ScheduleIcon } from '@mui/icons-material';
 // Modifica l'importazione per utilizzare il servizio corretto
 import { backupService } from '../../services/backup.service';
+import axios from 'axios';
 
 export const BackupSettings = () => {
   const [backups, setBackups] = useState<string[]>([]);
@@ -12,6 +13,12 @@ export const BackupSettings = () => {
   const [selectedBackup, setSelectedBackup] = useState<string>('');
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [snackbar, setSnackbar] = useState<{open: boolean, message: string, severity: 'success' | 'error'}>({open: false, message: '', severity: 'success'});
+  
+  // Stato per il backup automatico
+  const [autoBackupEnabled, setAutoBackupEnabled] = useState(false);
+  const [backupFrequency, setBackupFrequency] = useState<number>(24); // Ore
+  const [maxBackups, setMaxBackups] = useState<number>(10); // Numero massimo di backup da mantenere
+  const [autoBackupLoading, setAutoBackupLoading] = useState(false);
 
   const loadBackups = async () => {
     setLoading(true);
@@ -28,7 +35,22 @@ export const BackupSettings = () => {
 
   useEffect(() => {
     loadBackups();
+    loadAutoBackupSettings();
   }, []);
+  
+  // Carica le impostazioni del backup automatico
+  const loadAutoBackupSettings = async () => {
+    try {
+      const response = await axios.get('http://localhost:3001/api/settings/auto-backup');
+      if (response.data) {
+        setAutoBackupEnabled(response.data.enabled || false);
+        setBackupFrequency(response.data.frequency || 24);
+        setMaxBackups(response.data.maxBackups || 10);
+      }
+    } catch (err) {
+      console.error('Errore nel caricamento delle impostazioni di backup automatico:', err);
+    }
+  };
 
   const handleCreateBackup = async () => {
     setLoading(true);
@@ -82,10 +104,91 @@ export const BackupSettings = () => {
   const handleCloseSnackbar = () => {
     setSnackbar({...snackbar, open: false});
   };
+  
+  // Gestisce il salvataggio delle impostazioni di backup automatico
+  const handleSaveAutoBackupSettings = async () => {
+    setAutoBackupLoading(true);
+    try {
+      await axios.post('http://localhost:3001/api/settings/auto-backup', {
+        enabled: autoBackupEnabled,
+        frequency: backupFrequency,
+        maxBackups: maxBackups
+      });
+      setSnackbar({open: true, message: 'Impostazioni di backup automatico salvate con successo', severity: 'success'});
+    } catch (err) {
+      setSnackbar({open: true, message: 'Errore nel salvataggio delle impostazioni di backup automatico', severity: 'error'});
+      console.error(err);
+    } finally {
+      setAutoBackupLoading(false);
+    }
+  };
 
   return (
     <Paper sx={{ p: 3 }}>
       <Typography variant="h5" gutterBottom>Gestione Backup</Typography>
+      
+      {/* Sezione Backup Automatico */}
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h6" gutterBottom>Backup Automatico</Typography>
+        <Paper variant="outlined" sx={{ p: 3 }}>
+          <Grid container spacing={3}>
+            <Grid item xs={12}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={autoBackupEnabled}
+                    onChange={(e) => setAutoBackupEnabled(e.target.checked)}
+                    color="primary"
+                  />
+                }
+                label="Abilita backup automatico"
+              />
+            </Grid>
+            
+            <Grid item xs={12} md={6}>
+              <TextField
+                fullWidth
+                label="Frequenza di backup (ore)"
+                type="number"
+                value={backupFrequency}
+                onChange={(e) => setBackupFrequency(parseInt(e.target.value))}
+                disabled={!autoBackupEnabled}
+                InputProps={{ inputProps: { min: 1, max: 168 } }}
+                helperText="Minimo 1 ora, massimo 168 ore (7 giorni)"
+              />
+            </Grid>
+            
+            <Grid item xs={12} md={6}>
+              <TextField
+                fullWidth
+                label="Numero massimo di backup da mantenere"
+                type="number"
+                value={maxBackups}
+                onChange={(e) => setMaxBackups(parseInt(e.target.value))}
+                disabled={!autoBackupEnabled}
+                InputProps={{ inputProps: { min: 1, max: 100 } }}
+                helperText="I backup più vecchi verranno eliminati automaticamente"
+              />
+            </Grid>
+            
+            <Grid item xs={12}>
+              <Button
+                variant="contained"
+                color="primary"
+                startIcon={<ScheduleIcon />}
+                onClick={handleSaveAutoBackupSettings}
+                disabled={autoBackupLoading}
+              >
+                {autoBackupLoading ? <CircularProgress size={24} /> : 'Salva Impostazioni'}
+              </Button>
+            </Grid>
+          </Grid>
+        </Paper>
+      </Box>
+      
+      <Divider sx={{ my: 3 }} />
+      
+      <Typography variant="h6" gutterBottom>Backup Manuale</Typography>
       
       <Box sx={{ mb: 3 }}>
         <Button
