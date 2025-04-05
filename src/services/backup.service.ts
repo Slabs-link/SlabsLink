@@ -24,7 +24,7 @@ export const backupService = {
     return await axios.get(`${API_BASE_URL}/settings/auto-backup`);
   },
   
-  saveAutoBackupSettings: async (settings: { enabled: boolean, frequency: number, maxBackups: number }) => {
+  saveAutoBackupSettings: async (settings: { enabled: boolean, frequency: number, maxBackups: number, backupPath?: string }) => {
     return await axios.post(`${API_BASE_URL}/settings/auto-backup`, settings);
   }
 };

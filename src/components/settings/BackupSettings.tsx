@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Button, Card, Divider, List, ListItem, ListItemText, ListItemSecondaryAction, Typography, Box, Select, MenuItem, FormControl, InputLabel, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions, Paper, IconButton, Stack, Alert, Snackbar, CircularProgress, Switch, FormControlLabel, TextField, Grid } from '@mui/material';
-import { Backup as BackupIcon, Delete as DeleteIcon, Restore as RestoreIcon, Refresh as RefreshIcon, Schedule as ScheduleIcon } from '@mui/icons-material';
+import { Backup as BackupIcon, Delete as DeleteIcon, Restore as RestoreIcon, Refresh as RefreshIcon, Schedule as ScheduleIcon, Folder as FolderIcon } from '@mui/icons-material';
 // Modifica l'importazione per utilizzare il servizio corretto
 import { backupService } from '../../services/backup.service';
 import axios from 'axios';
+import FileFolderPicker from '../common/FileFolderPicker';
 
 export const BackupSettings = () => {
   const [backups, setBackups] = useState<string[]>([]);
@@ -18,6 +19,7 @@ export const BackupSettings = () => {
   const [autoBackupEnabled, setAutoBackupEnabled] = useState(false);
   const [backupFrequency, setBackupFrequency] = useState<number>(24); // Ore
   const [maxBackups, setMaxBackups] = useState<number>(10); // Numero massimo di backup da mantenere
+  const [backupPath, setBackupPath] = useState<string>(''); // Percorso personalizzato per i backup
   const [autoBackupLoading, setAutoBackupLoading] = useState(false);
 
   const loadBackups = async () => {
@@ -46,6 +48,7 @@ export const BackupSettings = () => {
         setAutoBackupEnabled(response.data.enabled || false);
         setBackupFrequency(response.data.frequency || 24);
         setMaxBackups(response.data.maxBackups || 10);
+        setBackupPath(response.data.backupPath || '');
       }
     } catch (err) {
       console.error('Errore nel caricamento delle impostazioni di backup automatico:', err);
@@ -109,10 +112,11 @@ export const BackupSettings = () => {
   const handleSaveAutoBackupSettings = async () => {
     setAutoBackupLoading(true);
     try {
-      await axios.post('http://localhost:3001/api/settings/auto-backup', {
+      await backupService.saveAutoBackupSettings({
         enabled: autoBackupEnabled,
         frequency: backupFrequency,
-        maxBackups: maxBackups
+        maxBackups: maxBackups,
+        backupPath: backupPath
       });
       setSnackbar({open: true, message: 'Impostazioni di backup automatico salvate con successo', severity: 'success'});
     } catch (err) {
@@ -168,6 +172,19 @@ export const BackupSettings = () => {
                 disabled={!autoBackupEnabled}
                 InputProps={{ inputProps: { min: 1, max: 100 } }}
                 helperText="I backup più vecchi verranno eliminati automaticamente"
+              />
+            </Grid>
+            
+            <Grid item xs={12}>
+              <FileFolderPicker
+                label="Cartella di destinazione dei backup"
+                value={backupPath}
+                onChange={setBackupPath}
+                isFolder={true}
+                directoryOnly={true}
+                disabled={!autoBackupEnabled}
+                helperText="Seleziona la cartella dove salvare i backup"
+                placeholder="Seleziona una cartella..."
               />
             </Grid>
             

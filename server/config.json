@@ -12,5 +12,6 @@
   "googleRedirectUri": "dd",
   "backupEnabled": true,
   "maxBackups": 5,
-  "backupFrequencyHours": 24
+  "backupFrequencyHours": 24,
+  "backupPath": "C:\\Users\\Ciro Latela\\Desktop\\Backup Slabslink"
 }

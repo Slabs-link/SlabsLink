@@ -2,12 +2,14 @@ import { Request, Response } from 'express';
 import { getDatabase } from '../config/database-sqlite';
 import { backupService } from '../services/backup.service';
 import { appSettings } from '../config/app-settings';
+import path from 'path';
 
 // Interface for auto backup settings
 interface AutoBackupSettings {
   enabled: boolean;
   frequency: number; // in hours
   maxBackups: number;
+  backupPath?: string; // Percorso personalizzato per i backup
 }
 
 // Get auto backup settings
@@ -35,6 +37,12 @@ export const getAutoBackupSettings = async (req: Request, res: Response) => {
     let value;
     try {
       value = JSON.parse(setting.value);
+      
+      // Ottieni il percorso di backup dalle impostazioni dell'app se non è presente nel valore
+      if (!value.backupPath) {
+        const backupPath = await appSettings.get('backupPath');
+        value.backupPath = backupPath;
+      }
     } catch (error) {
       value = getDefaultSettings();
     }
@@ -65,8 +73,15 @@ export const updateAutoBackupSettings = async (req: Request, res: Response) => {
     const validatedSettings: AutoBackupSettings = {
       enabled: Boolean(settings.enabled),
       frequency: Number(settings.frequency),
-      maxBackups: Number(settings.maxBackups)
+      maxBackups: Number(settings.maxBackups),
+      // Assicuriamoci che backupPath sia sempre definito e valido
+      backupPath: (settings.backupPath && settings.backupPath.trim() !== '') ? settings.backupPath : await appSettings.get('backupPath')
     };
+    
+    // Verifichiamo che backupPath sia definito e valido
+    if (!validatedSettings.backupPath || validatedSettings.backupPath.trim() === '') {
+      validatedSettings.backupPath = await appSettings.get('backupPath');
+    }    
     
     // Validazione dei valori numerici
     if (isNaN(validatedSettings.frequency) || validatedSettings.frequency < 1) {
@@ -79,6 +94,18 @@ export const updateAutoBackupSettings = async (req: Request, res: Response) => {
       return res.status(400).json({
         message: 'Il numero massimo di backup deve essere un numero maggiore di 0'
       });
+    }
+    
+    // Validazione del percorso di backup
+    if (validatedSettings.backupPath && typeof validatedSettings.backupPath !== 'string') {
+      return res.status(400).json({
+        message: 'Il percorso di backup deve essere una stringa valida'
+      });
+    }
+    
+    // Assicuriamoci che backupPath sia definito e non sia una stringa vuota
+    if (!validatedSettings.backupPath || validatedSettings.backupPath.trim() === '') {
+      validatedSettings.backupPath = await appSettings.get('backupPath');
     }
     
     const db = getDatabase();
@@ -128,11 +155,23 @@ export const updateAutoBackupSettings = async (req: Request, res: Response) => {
       backupService.setMaxBackups(validatedSettings.maxBackups);
     }
     
+    // Aggiorna il percorso di backup se specificato
+    if (validatedSettings.backupPath && backupService.setBackupPath) {
+      backupService.setBackupPath(validatedSettings.backupPath);
+    }
+    
     // Salva le impostazioni nel sistema di configurazione
 // Remove duplicate db declaration since it's already defined above
     await appSettings.set('backupEnabled', validatedSettings.enabled);
     await appSettings.set('maxBackups', validatedSettings.maxBackups);
     await appSettings.set('backupFrequencyHours', validatedSettings.frequency);
+    
+    // Salva il percorso di backup nelle impostazioni dell'app
+    // Assicuriamoci che il percorso di backup venga sempre salvato, anche se è quello di default
+    await appSettings.set('backupPath', validatedSettings.backupPath);
+    
+    // Log per debug
+    console.log('Salvato percorso di backup:', validatedSettings.backupPath);
     
     // Nota: alcune modifiche potrebbero richiedere un riavvio del server 
     // per avere effetto completo sul timer di backup
@@ -155,6 +194,7 @@ const getDefaultSettings = (): AutoBackupSettings => {
   return {
     enabled: false,
     frequency: 24, // 24 ore (giornaliero)
-    maxBackups: 10
+    maxBackups: 10,
+    backupPath: path.join(__dirname, '../../backups') // Percorso di default
   };
 };
