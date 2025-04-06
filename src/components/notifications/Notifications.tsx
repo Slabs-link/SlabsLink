@@ -34,7 +34,8 @@ import {
   Tooltip,
   FormControlLabel,
   Switch,
-  FormHelperText
+  FormHelperText,
+  Checkbox
 } from '@mui/material';
 import { 
   Add as AddIcon, 
@@ -50,13 +51,18 @@ import axios from 'axios';
 import { styled } from '@mui/material/styles';
 import Sidebar from '../common/Sidebar';
 import { Template } from '../../types/template';
+import { notificationService } from '../../services/notification.service';
+import NotificationSender from './NotificationSender';
 
 // Interfaccia per le notifiche
 interface Notification {
   id: number;
   appointment_id: number | null;
   patient_id: number;
+  user_id: number;
   patient_name: string;
+  first_name?: string;
+  last_name?: string;
   message: string;
   status: 'pending' | 'sent' | 'failed';
   type: 'appointment_confirmation' | 'appointment_reminder' | 'custom';
@@ -68,6 +74,7 @@ interface Notification {
   appointment_date?: string;
   appointment_time?: string;
   phone_number?: string;
+  selected?: boolean; // Per la selezione multipla
 }
 
 // Interfaccia per le statistiche
@@ -90,7 +97,7 @@ interface NotificationState {
 interface FilterState {
   status: string;
   type: string;
-  patientId: string;
+  userId: string; // Cambiato da patientId a userId
 }
 
 // Interfaccia per la paginazione
@@ -124,14 +131,17 @@ const Notifications: React.FC = () => {
   const [filters, setFilters] = useState<FilterState>({
     status: '',
     type: '',
-    patientId: ''
+    userId: ''
   });
   const [pagination, setPagination] = useState<PaginationState>({
     page: 1,
     pageSize: 10,
     pages: 1,
     total: 0
-});
+  });
+  // Stati per la selezione multipla
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedNotifications, setSelectedNotifications] = useState<number[]>([]);
   const [patients, setPatients] = useState<{id: number, first_name: string, last_name: string}[]>([]);
   const [newNotification, setNewNotification] = useState({
     patient_id: '',
@@ -157,10 +167,10 @@ const Notifications: React.FC = () => {
       
       if (filters.status) queryParams.append('status', filters.status);
       if (filters.type) queryParams.append('type', filters.type);
-      if (filters.patientId) queryParams.append('patientId', filters.patientId);
+      if (filters.userId) queryParams.append('userId', filters.userId); // Filtro per userId invece di patientId
       
       const response = await axios.get(`http://localhost:3001/api/notifications?${queryParams.toString()}`);
-      console.log(response.data)
+      console.log('Risposta API notifiche:', response.data);
       
       // Verifichiamo che response.data.notifications esista prima di usare map
       if (!response.data || !Array.isArray(response.data.notifications)) {
@@ -183,10 +193,16 @@ const Notifications: React.FC = () => {
         return;
       }
 
-      setNotifications(response.data.notifications);
+      // Assicuriamoci che ogni notifica abbia i campi necessari
+      const processedNotifications = response.data.notifications.map((notification: Notification) => ({
+        ...notification,
+        selected: selectedNotifications.includes(notification.id) // Mantieni lo stato di selezione
+      }));
+
+      setNotifications(processedNotifications);
       setPagination(response.data.pagination);
       console.log('Dati statistiche:', response.data.stats);
-      console.log('Notifiche ricevute:', response.data.notifications.length);
+      console.log('Notifiche ricevute:', processedNotifications.length);
 
       // Aggiornamento corretto delle statistiche per i totalizzatori
       const statsData = response.data.stats || {};
@@ -201,11 +217,11 @@ const Notifications: React.FC = () => {
       };
       
       // Se le statistiche dal server sono vuote, calcoliamole dalle notifiche
-      if (!statsData.total_count && Array.isArray(response.data.notifications)) {
-        calculatedStats.total_count = response.data.notifications.length;
-        calculatedStats.sent_count = response.data.notifications.filter((n: Notification) => n.status === 'sent').length;
-        calculatedStats.pending_count = response.data.notifications.filter((n: Notification) => n.status === 'pending').length;
-        calculatedStats.failed_count = response.data.notifications.filter((n: Notification) => n.status === 'failed').length;
+      if (!statsData.total_count && Array.isArray(processedNotifications)) {
+        calculatedStats.total_count = processedNotifications.length;
+        calculatedStats.sent_count = processedNotifications.filter((n: Notification) => n.status === 'sent').length;
+        calculatedStats.pending_count = processedNotifications.filter((n: Notification) => n.status === 'pending').length;
+        calculatedStats.failed_count = processedNotifications.filter((n: Notification) => n.status === 'failed').length;
       }
       
       setStats(calculatedStats);
@@ -229,13 +245,19 @@ const Notifications: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [filters, pagination, selectedNotifications]);
 
   // Funzione per caricare le notifiche ogni 5 minuti invece che ogni 5 secondi
   useEffect(() => {
+    fetchNotifications(); // Carica le notifiche all'avvio
     const interval = setInterval(fetchNotifications, 300000); // 5 minuti = 300000 ms
     return () => clearInterval(interval);
   }, [fetchNotifications]);
+  
+  // Effetto per reagire ai cambiamenti dei filtri
+  useEffect(() => {
+    fetchNotifications();
+  }, [filters, pagination?.page, pagination?.pageSize]);
 
 
   // Funzione per caricare i pazienti
@@ -262,12 +284,11 @@ const Notifications: React.FC = () => {
     }
   };
 
-  // Carica i dati all'avvio
+  // Carica i dati all'avvio e quando cambiano i filtri o la paginazione
   useEffect(() => {
-    fetchNotifications();
     fetchPatients();
     fetchAppointments();
-  }, [pagination?.page, filters]);
+  }, []);
 
   // Gestione del dialogo per inviare una nuova notifica
   const handleOpenSendDialog = () => {
@@ -366,7 +387,7 @@ const Notifications: React.FC = () => {
     }
   };
 
-  // Funzione per elaborare tutte le notifiche in attesa
+  // Funzione per elaborare tutte le notifiche in attesa o quelle selezionate
   const handleProcessPendingNotifications = async () => {
     try {
       setNotification({
@@ -375,13 +396,30 @@ const Notifications: React.FC = () => {
         severity: 'info'
       });
       
-      const response = await axios.post('http://localhost:3001/api/notifications/process');
-      
-      setNotification({
-        open: true,
-        message: response.data.message,
-        severity: 'success'
-      });
+      if (selectedNotifications.length > 0) {
+        // Elaborazione delle notifiche selezionate
+        for (const id of selectedNotifications) {
+          await axios.post(`http://localhost:3001/api/notifications/process/${id}`);
+        }
+        
+        setNotification({
+          open: true,
+          message: `${selectedNotifications.length} notifiche elaborate con successo`,
+          severity: 'success'
+        });
+        
+        setSelectedNotifications([]);
+        setSelectMode(false);
+      } else {
+        // Elaborazione di tutte le notifiche in attesa
+        const response = await axios.post('http://localhost:3001/api/notifications/process');
+        
+        setNotification({
+          open: true,
+          message: response.data.message || 'Notifiche elaborate con successo',
+          severity: 'success'
+        });
+      }
       
       fetchNotifications();
     } catch (error) {
@@ -389,6 +427,40 @@ const Notifications: React.FC = () => {
       setNotification({
         open: true,
         message: 'Errore durante l\'elaborazione delle notifiche',
+        severity: 'error'
+      });
+    }
+  };
+  
+  // Funzione per eliminare le notifiche selezionate
+  const handleDeleteSelectedNotifications = async () => {
+    if (selectedNotifications.length === 0) return;
+    
+    try {
+      setNotification({
+        open: true,
+        message: 'Eliminazione notifiche in corso...',
+        severity: 'info'
+      });
+      
+      for (const id of selectedNotifications) {
+        await axios.delete(`http://localhost:3001/api/notifications/${id}`);
+      }
+      
+      setNotification({
+        open: true,
+        message: `${selectedNotifications.length} notifiche eliminate con successo`,
+        severity: 'success'
+      });
+      
+      setSelectedNotifications([]);
+      setSelectMode(false);
+      fetchNotifications();
+    } catch (error) {
+      console.error('Error deleting notifications:', error);
+      setNotification({
+        open: true,
+        message: 'Errore durante l\'eliminazione delle notifiche',
         severity: 'error'
       });
     }
@@ -403,6 +475,26 @@ const Notifications: React.FC = () => {
         severity: 'info'
       });
       
+      // Ottieni i dettagli della notifica
+      const notificationResponse = await axios.get(`http://localhost:3001/api/notifications/${id}`);
+      const notificationData = notificationResponse.data;
+      
+      if (!notificationData) {
+        throw new Error('Notifica non trovata');
+      }
+      
+      // Ottieni il numero di telefono dell'utente
+      const userResponse = await axios.get(`http://localhost:3001/api/users/${notificationData.user_id}`);
+      const phoneNumber = userResponse.data.phone;
+      
+      if (!phoneNumber) {
+        throw new Error('L\'utente non ha un numero di telefono');
+      }
+      
+      // Invia la notifica tramite WhatsApp
+      await notificationService.sendWhatsAppNotification(phoneNumber, notificationData.message);
+      
+      // Aggiorna lo stato della notifica nel database
       const response = await axios.post(`http://localhost:3001/api/notifications/process/${id}`);
       
       setNotification({
@@ -431,6 +523,38 @@ const Notifications: React.FC = () => {
   const handleFilterChange = (field: keyof FilterState, value: string) => {
     setFilters(prev => ({ ...prev, [field]: value }));
     setPagination(prev => ({ ...prev, page: 1 }));
+    // Utilizziamo useEffect per reagire ai cambiamenti di filters invece di chiamare fetchNotifications qui
+  };
+  
+  // Funzione per gestire la selezione/deselezione di una notifica
+  const handleSelectNotification = (id: number) => {
+    if (selectedNotifications.includes(id)) {
+      setSelectedNotifications(prev => prev.filter(notificationId => notificationId !== id));
+    } else {
+      setSelectedNotifications(prev => [...prev, id]);
+    }
+  };
+  
+  // Funzione per attivare/disattivare la modalità selezione
+  const toggleSelectMode = () => {
+    setSelectMode(prev => !prev);
+    if (selectMode) {
+      setSelectedNotifications([]);
+    }
+  };
+  
+  // Funzione per selezionare/deselezionare tutte le notifiche
+  const handleSelectAll = () => {
+    if (selectedNotifications.length === notifications.length) {
+      setSelectedNotifications([]);
+    } else {
+      setSelectedNotifications(notifications.map(n => n.id));
+    }
+  };
+  
+  // Funzione per verificare se una notifica è selezionata
+  const isNotificationSelected = (id: number): boolean => {
+    return selectedNotifications.includes(id);
   };
 
   // Gestione della paginazione
@@ -598,12 +722,52 @@ const Notifications: React.FC = () => {
         severity: 'info'
       });
 
-      await axios.post('http://localhost:3001/api/notifications/template', {
+      // Ottieni il numero di telefono dell'utente
+      const userResponse = await axios.get(`http://localhost:3001/api/users/${newNotification.patient_id}`);
+      const phoneNumber = userResponse.data.phone;
+      
+      if (!phoneNumber) {
+        setNotification({
+          open: true,
+          message: 'L\'utente selezionato non ha un numero di telefono',
+          severity: 'error'
+        });
+        return;
+      }
+
+      // Salva la notifica nel database
+      const response = await axios.post('http://localhost:3001/api/notifications/template', {
         user_id: newNotification.patient_id,
         template_id: selectedTemplate,
         variables: templateVariables,
         appointment_id: appointments.find(a => a.patient_id === newNotification.patient_id)?.id || null
       });
+
+      // Ottieni il template e sostituisci le variabili
+      const template = templates.find(t => t.id === selectedTemplate);
+      if (template) {
+        const patient = patients.find(p => p.id.toString() === newNotification.patient_id);
+        if (patient) {
+          // Prepara le variabili per la sostituzione
+          const variables = {
+            ...templateVariables,
+            first_name: patient.first_name,
+            last_name: patient.last_name,
+            patient_name: `${patient.first_name} ${patient.last_name}`
+          };
+          
+          // Sostituisci le variabili nel template
+          const message = notificationService.replaceTemplateVariables(template.content, variables);
+          
+          // Invia la notifica tramite WhatsApp
+          await notificationService.sendWhatsAppNotification(phoneNumber, message);
+          
+          // Aggiorna lo stato della notifica nel database
+          if (response.data && response.data.id) {
+            await axios.post(`http://localhost:3001/api/notifications/process/${response.data.id}`);
+          }
+        }
+      }
 
       setNotification({
         open: true,
@@ -639,7 +803,29 @@ const Notifications: React.FC = () => {
         severity: 'info'
       });
 
-      await axios.post('http://localhost:3001/api/notifications', newNotification);
+      // Ottieni il numero di telefono dell'utente
+      const userResponse = await axios.get(`http://localhost:3001/api/users/${newNotification.patient_id}`);
+      const phoneNumber = userResponse.data.phone;
+      
+      if (!phoneNumber) {
+        setNotification({
+          open: true,
+          message: 'L\'utente selezionato non ha un numero di telefono',
+          severity: 'error'
+        });
+        return;
+      }
+
+      // Salva la notifica nel database
+      const response = await axios.post('http://localhost:3001/api/notifications', newNotification);
+
+      // Invia la notifica tramite WhatsApp
+      await notificationService.sendWhatsAppNotification(phoneNumber, newNotification.message);
+      
+      // Aggiorna lo stato della notifica nel database
+      if (response.data && response.data.id) {
+        await axios.post(`http://localhost:3001/api/notifications/process/${response.data.id}`);
+      }
 
       setNotification({
         open: true,
@@ -803,11 +989,11 @@ const Notifications: React.FC = () => {
           </FormControl>
           
           <FormControl sx={{ minWidth: 200 }}>
-            <InputLabel>Paziente</InputLabel>
+            <InputLabel>Utente</InputLabel>
             <Select
-              value={filters.patientId}
-              label="Paziente"
-              onChange={(e) => handleFilterChange('patientId', e.target.value)}
+              value={filters.userId}
+              label="Utente"
+              onChange={(e) => handleFilterChange('userId', e.target.value)}
               size="small"
             >
               <MenuItem value="">Tutti</MenuItem>
@@ -823,7 +1009,7 @@ const Notifications: React.FC = () => {
             variant="outlined"
             startIcon={<RefreshIcon />}
             onClick={() => {
-              setFilters({ status: '', type: '', patientId: '' }),
+              setFilters({ status: '', type: '', userId: '' }),
               setPagination((prev) => ({ ...prev, page: 1 }))
             }}>
             Reset filtri
@@ -864,10 +1050,71 @@ const Notifications: React.FC = () => {
           </Box>
         ) : (
           <>
+            {/* Barra degli strumenti per la selezione multipla */}
+            {notifications.length > 0 && (
+              <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={selectMode}
+                      onChange={toggleSelectMode}
+                      color="primary"
+                    />
+                  }
+                  label="Modalità selezione"
+                />
+                
+                {selectMode && (
+                  <>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={handleSelectAll}
+                    >
+                      {selectedNotifications.length === notifications.length ? 'Deseleziona tutti' : 'Seleziona tutti'}
+                    </Button>
+                    
+                    {selectedNotifications.length > 0 && (
+                      <>
+                        <Button
+                          variant="contained"
+                          size="small"
+                          startIcon={<SendIcon />}
+                          onClick={handleProcessPendingNotifications}
+                          color="primary"
+                        >
+                          Invia selezionate ({selectedNotifications.length})
+                        </Button>
+                        
+                        <Button
+                          variant="contained"
+                          size="small"
+                          startIcon={<DeleteIcon />}
+                          onClick={handleDeleteSelectedNotifications}
+                          color="error"
+                        >
+                          Elimina selezionate ({selectedNotifications.length})
+                        </Button>
+                      </>
+                    )}
+                  </>
+                )}
+              </Box>
+            )}
+            
             <TableContainer component={Paper} sx={{ borderRadius: 2, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
               <Table>
                 <TableHead>
                   <TableRow>
+                    {selectMode && (
+                      <TableCell padding="checkbox">
+                        <Checkbox
+                          checked={selectedNotifications.length === notifications.length && notifications.length > 0}
+                          indeterminate={selectedNotifications.length > 0 && selectedNotifications.length < notifications.length}
+                          onChange={handleSelectAll}
+                        />
+                      </TableCell>
+                    )}
                     <TableCell>Stato</TableCell>
                     <TableCell>Utente</TableCell>
                     <TableCell>Tipo</TableCell>
@@ -879,7 +1126,24 @@ const Notifications: React.FC = () => {
                 </TableHead>
                 <TableBody>
                   {notifications?.map((notification) => (
-                    <TableRow key={notification.id}>
+                    <TableRow 
+                      key={notification.id}
+                      selected={selectMode && isNotificationSelected(notification.id)}
+                      onClick={selectMode ? () => handleSelectNotification(notification.id) : undefined}
+                      sx={selectMode ? { cursor: 'pointer' } : undefined}
+                    >
+                      {selectMode && (
+                        <TableCell padding="checkbox">
+                          <Checkbox
+                            checked={isNotificationSelected(notification.id)}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              handleSelectNotification(notification.id);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell>
                         <Chip 
                           label={translateStatus(notification.status)} 
@@ -892,7 +1156,11 @@ const Notifications: React.FC = () => {
                           }
                         />
                       </TableCell>
-                      <TableCell>{notification.patient_name}</TableCell>
+                      <TableCell>
+                        {notification.first_name && notification.last_name 
+                          ? `${notification.first_name} ${notification.last_name}` 
+                          : notification.patient_name || '-'}
+                      </TableCell>
                       <TableCell>{translateType(notification.type)}</TableCell>
                       <TableCell>
                         <Typography 
@@ -916,7 +1184,10 @@ const Notifications: React.FC = () => {
                               <IconButton 
                                 size="small" 
                                 color="primary"
-                                onClick={() => handleProcessSingleNotification(notification.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleProcessSingleNotification(notification.id);
+                                }}
                               >
                                 <SendIcon fontSize="small" />
                               </IconButton>
@@ -928,7 +1199,10 @@ const Notifications: React.FC = () => {
                               <IconButton 
                                 size="small" 
                                 color="primary"
-                                onClick={() => handleResendNotification(notification.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleResendNotification(notification.id);
+                                }}
                               >
                                 <SendIcon fontSize="small" />
                               </IconButton>
@@ -940,7 +1214,10 @@ const Notifications: React.FC = () => {
                               <IconButton 
                                 size="small" 
                                 color="warning"
-                                onClick={() => handleOpenErrorDialog(notification)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenErrorDialog(notification);
+                                }}
                               >
                                 <ErrorIcon fontSize="small" />
                               </IconButton>
@@ -951,7 +1228,10 @@ const Notifications: React.FC = () => {
                             <IconButton 
                               size="small" 
                               color="error"
-                              onClick={() => handleOpenDeleteDialog(notification)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenDeleteDialog(notification);
+                              }}
                             >
                               <DeleteIcon fontSize="small" />
                             </IconButton>

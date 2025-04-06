@@ -22,6 +22,7 @@ import { it } from 'date-fns/locale';
 import { addMinutes, format, parse, isWithinInterval } from 'date-fns';
 import axios from 'axios';
 import { InfoOutlined } from '@mui/icons-material';
+import { notificationService } from '../../services/notification.service';
 
 interface User {
   id: number;
@@ -391,7 +392,21 @@ const AppointmentForm: React.FC<AppointmentFormProps> = ({ appointment, onSave, 
         time: timeString
       };
       
+      // Determina il tipo di notifica da inviare (creazione o modifica)
+      const notificationType = formData.id ? 'update' : 'creation';
+      
+      // Salva l'appuntamento e poi invia la notifica
       onSave(appointmentData);
+      
+      // Invia la notifica automatica dopo il salvataggio
+      // Nota: questo verrà eseguito solo se l'appuntamento è stato salvato con successo
+      // e l'ID è disponibile (per gli appuntamenti nuovi, l'ID sarà disponibile dopo il salvataggio)
+      if (formData.id) {
+        // Per gli appuntamenti esistenti, possiamo inviare la notifica subito
+        notificationService.sendAppointmentNotification(formData.id, notificationType)
+          .catch((error: Error) => console.error(`Error sending ${notificationType} notification:`, error));
+      }
+      // Per i nuovi appuntamenti, la notifica verrà inviata dal componente che gestisce il salvataggio
     }
   };
 

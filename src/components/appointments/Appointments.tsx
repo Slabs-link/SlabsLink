@@ -51,6 +51,7 @@ import { styled } from '@mui/material/styles';
 import Sidebar from '../common/Sidebar';
 import { TableRow, TableCell } from '@mui/material';
 import { formatDate, translateStatus } from '../../utils';
+import { notificationService } from '../../services/notification.service';
 
 const SidebarItem = styled(Box)(({ theme }) => ({
     display: 'flex',
@@ -277,22 +278,54 @@ const Appointments: React.FC = () => {
         severity: 'info'
       });
 
+      let savedAppointment;
+      
       if (appointmentData.id) {
         // Update existing appointment
-        await axios.put(`http://localhost:3001/api/appointments/${appointmentData.id}`, appointmentData);
+        const response = await axios.put(`http://localhost:3001/api/appointments/${appointmentData.id}`, appointmentData);
+        savedAppointment = response.data;
         setNotification({
           open: true,
           message: 'Appuntamento aggiornato con successo',
           severity: 'success'
         });
+        
+        // Invia notifica di aggiornamento
+        try {
+          await notificationService.sendAppointmentNotification(appointmentData.id, 'update');
+        } catch (notificationError) {
+          console.error('Error sending update notification:', notificationError);
+        }
       } else {
         // Create new appointment
-        await axios.post('http://localhost:3001/api/appointments', appointmentData);
+        const response = await axios.post('http://localhost:3001/api/appointments', appointmentData);
+        savedAppointment = response.data;
         setNotification({
           open: true,
           message: 'Appuntamento creato con successo',
           severity: 'success'
         });
+        
+        // Invia notifica di creazione per il nuovo appuntamento
+        if (savedAppointment && savedAppointment.id) {
+          try {
+            // Invia notifica tramite il servizio di notifica
+            await notificationService.sendAppointmentNotification(savedAppointment.id, 'creation');
+            
+            // Invia anche una notifica WhatsApp immediata
+            try {
+              // Importa il servizio WhatsApp
+              const { whatsAppService } = await import('../../services/whatsapp.service');
+              if (whatsAppService && whatsAppService.isServiceAuthenticated()) {
+                await whatsAppService.sendImmediateNotification(savedAppointment.id.toString());
+              }
+            } catch (whatsappError) {
+              console.error('Error sending WhatsApp notification:', whatsappError);
+            }
+          } catch (notificationError) {
+            console.error('Error sending creation notification:', notificationError);
+          }
+        }
       }
       
       handleCloseFormDialog();

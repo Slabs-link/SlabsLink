@@ -33,6 +33,13 @@ INSERT INTO notification_templates (name, description, content, type, is_system)
   TRUE
 ),
 (
+  'Notifica Google Calendar', 
+  'Notifica per un appuntamento creato da Google Calendar', 
+  'Gentile {{patient_name}}, le confermiamo che è stato fissato un nuovo appuntamento tramite Google Calendar per {{appointment_title}} in data {{appointment_date}} alle ore {{appointment_time}}. La aspettiamo!', 
+  'google_calendar_confirmation',
+  TRUE
+),
+(
   'Auguri Natalizi', 
   'Messaggio di auguri per Natale', 
   'Gentile {{patient_name}}, lo staff di SlabsLink le augura un sereno Natale e felici festività!', 

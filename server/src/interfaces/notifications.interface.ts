@@ -13,8 +13,12 @@ export interface User {
 
 export interface Appointment {
   id: number;
+  patient_id: number;
   appointment_date: string;
   appointment_time: string;
+  date?: string; // Alias per appointment_date
+  time?: string; // Alias per appointment_time
+  title?: string; // Titolo dell'appuntamento
 }
 
 export interface Notification {

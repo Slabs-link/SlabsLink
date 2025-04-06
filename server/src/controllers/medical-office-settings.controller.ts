@@ -20,6 +20,7 @@ interface MedicalOfficeSettings {
   showInfoTab: boolean;
   enableUserFileUpload: boolean;
   userFilesPath: string;
+  clinicName: string; // Nome dell'azienda o studio medico
 }
 
 // Get medical office settings
@@ -170,6 +171,7 @@ const getDefaultSettings = (): MedicalOfficeSettings => {
     defaultAppointmentDuration: 30,
     showInfoTab: true,
     enableUserFileUpload: false,
-    userFilesPath: 'uploads/users'
+    userFilesPath: 'uploads/users',
+    clinicName: 'SlabsLink' // Valore predefinito per il nome dell'azienda
   };
 };

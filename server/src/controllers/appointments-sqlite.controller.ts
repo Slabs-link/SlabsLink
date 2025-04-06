@@ -738,32 +738,71 @@ export const deleteAppointment = async (req: Request, res: Response) => {
       return res.status(404).json({ message: 'Appointment not found' });
     }
     
-    // Se l'appuntamento ha un ID evento Google Calendar, elimina l'evento
-    if (appointment.google_calendar_event_id) {
-      try {
-        const googleCalendarService = new GoogleCalendarService();
+    // Inizia una transazione per garantire l'integrità dei dati
+    db.prepare('BEGIN TRANSACTION').run();
+    
+    try {
+      // Verifica se ci sono notifiche associate a questo appuntamento
+      const relatedNotifications = db.prepare('SELECT id FROM notifications WHERE appointment_id = ?').all(id);
+      
+      // Se ci sono notifiche associate, aggiorna il loro appointment_id a NULL
+      if (relatedNotifications && relatedNotifications.length > 0) {
+        console.log(`Trovate ${relatedNotifications.length} notifiche associate all'appuntamento ${id}`);
         
-        // Verifica che il servizio sia abilitato e autenticato prima di procedere
-        if (await googleCalendarService.isServiceEnabled() && await googleCalendarService.isServiceAuthenticated()) {
-          // Configura il servizio prima di utilizzarlo
-          await googleCalendarService.configure();
-          
-          console.log(`Tentativo di eliminazione evento Google Calendar con ID: ${appointment.google_calendar_event_id}`);
-          await googleCalendarService.deleteCalendarEvent(appointment.google_calendar_event_id);
-          console.log(`Evento Google Calendar eliminato con successo`);
-        } else {
-          console.warn('Servizio Google Calendar non abilitato o non autenticato, impossibile eliminare l\'evento');
+        // Aggiorna le notifiche impostando appointment_id a NULL
+        // Questo risolve il problema del vincolo di chiave esterna
+        db.prepare('UPDATE notifications SET appointment_id = NULL WHERE appointment_id = ?').run(id);
+        console.log(`Aggiornate le notifiche associate all'appuntamento ${id}`);
+        
+        // Verifica che l'aggiornamento sia stato completato correttamente
+        const remainingNotifications = db.prepare('SELECT COUNT(*) as count FROM notifications WHERE appointment_id = ?').get(id) as { count: number };
+        if (remainingNotifications.count > 0) {
+          throw new Error(`Impossibile aggiornare tutte le notifiche associate all'appuntamento ${id}`);
         }
-      } catch (error) {
-        console.error('Errore durante l\'eliminazione dell\'evento da Google Calendar:', error);
-        // Continua comunque con l'eliminazione dell'appuntamento
       }
+      
+      // Se l'appuntamento ha un ID evento Google Calendar, elimina l'evento
+      if (appointment.google_calendar_event_id) {
+        try {
+          const googleCalendarService = new GoogleCalendarService();
+          
+          // Verifica che il servizio sia abilitato e autenticato prima di procedere
+          if (await googleCalendarService.isServiceEnabled() && await googleCalendarService.isServiceAuthenticated()) {
+            // Configura il servizio prima di utilizzarlo
+            await googleCalendarService.configure();
+            
+            console.log(`Tentativo di eliminazione evento Google Calendar con ID: ${appointment.google_calendar_event_id}`);
+            await googleCalendarService.deleteCalendarEvent(appointment.google_calendar_event_id);
+            console.log(`Evento Google Calendar eliminato con successo`);
+          } else {
+            console.warn('Servizio Google Calendar non abilitato o non autenticato, impossibile eliminare l\'evento');
+          }
+        } catch (error) {
+          console.error('Errore durante l\'eliminazione dell\'evento da Google Calendar:', error);
+          // Continua comunque con l'eliminazione dell'appuntamento
+        }
+      }
+      
+      // Ora possiamo eliminare l'appuntamento in sicurezza
+      const deleteResult = db.prepare('DELETE FROM appointments WHERE id = ?').run(id);
+      
+      // Verifica che l'eliminazione sia avvenuta con successo
+      if (deleteResult.changes === 0) {
+        throw new Error(`Impossibile eliminare l'appuntamento con ID ${id}`);
+      }
+      
+      // Commit della transazione
+      db.prepare('COMMIT').run();
+      
+      return res.json({
+        message: 'Appuntamento eliminato con successo',
+        appointment: appointment
+      });
+    } catch (transactionError: any) {
+      // Rollback in caso di errore
+      db.prepare('ROLLBACK').run();
+      throw transactionError;
     }
-    
-    // Delete appointment
-    db.prepare('DELETE FROM appointments WHERE id = ?').run(id);
-    
-    return res.json(appointment);
   } catch (error: any) {
     console.error('Error deleting appointment:', error);
     return res.status(500).json({ 

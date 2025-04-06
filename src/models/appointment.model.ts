@@ -75,6 +75,14 @@ export class AppointmentModel {
     );
     return result.map(this.mapRowToAppointment);
   }
+  
+  async getById(id: string): Promise<Appointment[]> {
+    const result = await this.pool.all(
+      'SELECT * FROM appointments WHERE id = ?',
+      [id]
+    );
+    return result.map(this.mapRowToAppointment);
+  }
 
   async getPendingSync(): Promise<Appointment[]> {
     const result = await this.pool.all(

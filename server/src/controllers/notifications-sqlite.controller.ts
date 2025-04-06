@@ -164,7 +164,8 @@ export const createNotification = async (req: Request, res: Response) => {
       // Replace custom variables if provided
       if (variables) {
         Object.keys(variables).forEach(key => {
-          finalMessage = finalMessage.replace(`{${key}}`, variables[key]);
+          // Supporta sia il formato {{variable}} che {variable}
+          finalMessage = finalMessage.replace(new RegExp(`\{\{${key}\}\}|\{${key}\}`, 'g'), variables[key]);
         });
       }
     }
@@ -646,6 +647,124 @@ export const resendNotification = async (req: Request, res: Response) => {
     console.error('Error resending notification:', error);
     return res.status(500).json({ 
       message: 'Error resending notification', 
+      error: error.message 
+    });
+  }
+};
+
+// Endpoint per le notifiche automatiche degli appuntamenti
+export const createAppointmentNotification = async (req: Request, res: Response) => {
+  try {
+    const { appointmentId, notificationType } = req.body;
+    
+    // Validazione dei campi richiesti
+    if (!appointmentId || !notificationType) {
+      return res.status(400).json({ 
+        message: 'ID appuntamento e tipo di notifica sono richiesti',
+        missing_fields: [!appointmentId && 'appointmentId', !notificationType && 'notificationType'].filter(Boolean)
+      });
+    }
+    
+    const db = getDatabase();
+    
+    // Verifica se l'appuntamento esiste
+    const appointment = db.prepare('SELECT * FROM appointments WHERE id = ?').get(appointmentId) as Appointment;
+    if (!appointment) {
+      return res.status(404).json({ 
+        message: 'Appuntamento non trovato',
+        invalid_field: 'appointmentId',
+        received_value: appointmentId
+      });
+    }
+    
+    // Ottieni l'utente associato all'appuntamento
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(appointment.patient_id) as User;
+    if (!user) {
+      return res.status(404).json({ 
+        message: 'Utente associato all\'appuntamento non trovato',
+        invalid_field: 'patient_id',
+        received_value: appointment.patient_id
+      });
+    }
+    
+    // Determina il tipo di template da utilizzare in base al tipo di notifica
+    let templateType = '';
+    switch (notificationType) {
+      case 'creation':
+        templateType = 'appointment_created';
+        break;
+      case 'update':
+        templateType = 'appointment_update';
+        break;
+      case 'cancellation':
+        templateType = 'appointment_cancellation';
+        break;
+      default:
+        return res.status(400).json({ 
+          message: 'Tipo di notifica non valido',
+          invalid_field: 'notificationType',
+          received_value: notificationType
+        });
+    }
+    
+    // Ottieni il template appropriato
+    const template = db.prepare('SELECT * FROM notification_templates WHERE type = ? LIMIT 1').get(templateType) as Template;
+    if (!template) {
+      return res.status(404).json({ 
+        message: `Template per ${templateType} non trovato`,
+        invalid_field: 'templateType',
+        received_value: templateType
+      });
+    }
+    
+    // Prepara il messaggio con le variabili sostituite
+    let finalMessage = template.content;
+    
+    // Sostituisci le variabili dell'utente
+    finalMessage = finalMessage
+      .replace(/\{\{first_name\}\}|\{first_name\}/g, user.first_name || '')
+      .replace(/\{\{last_name\}\}|\{last_name\}/g, user.last_name || '');
+    
+    // Sostituisci le variabili dell'appuntamento
+    finalMessage = finalMessage
+      .replace(/\{\{appointment_date\}\}|\{appointment_date\}/g, appointment.appointment_date || appointment.date || '')
+      .replace(/\{\{appointment_time\}\}|\{appointment_time\}/g, appointment.appointment_time || appointment.time || '')
+      .replace(/\{\{appointment_title\}\}|\{appointment_title\}/g, appointment.title || 'Appuntamento');
+    
+    // Inserisci la notifica
+    const insertStmt = db.prepare(`
+      INSERT INTO notifications (
+        user_id, message, status, template_id, appointment_id
+      ) VALUES (?, ?, 'pending', ?, ?)
+    `);
+    
+    const result = insertStmt.run(
+      user.id,
+      finalMessage,
+      template.id,
+      appointmentId
+    );
+    
+    const notificationId = result.lastInsertRowid;
+    
+    // Ottieni la notifica creata
+    const newNotification = db.prepare(`
+      SELECT n.*, u.first_name, u.last_name
+      FROM notifications n
+      JOIN users u ON n.user_id = u.id
+      WHERE n.id = ?
+    `).get(notificationId) as Notification;
+    
+    return res.status(201).json({
+      success: true,
+      notification: newNotification,
+      message: `Notifica per ${notificationType} appuntamento creata con successo`
+    });
+  } catch (error: any) {
+    console.error('Errore nella creazione della notifica per appuntamento:', error);
+    return res.status(500).json({ 
+      success: false,
+      message: 'Errore nella creazione della notifica per appuntamento', 
       error: error.message 
     });
   }

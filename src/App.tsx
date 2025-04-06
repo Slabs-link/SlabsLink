@@ -16,6 +16,7 @@ import Calendar from './components/calendar/Calendar';
 //import Patients from './components/patients/Patients';
 import Notifications from './components/notifications/Notifications';
 import TemplateManager from './components/templates/TemplateManager';
+import AppointmentNotificationTemplates from './components/templates/AppointmentNotificationTemplates';
 import LicenseCheck from './components/system/LicenseCheck';
 import GoogleAuthCallback from './components/settings/GoogleAuthCallback';
 // Importa il componente Users
@@ -67,6 +68,8 @@ function App() {
             <Route path="/notifications" element={<Notifications />} />
             {/* Aggiungi la rotta per la pagina degli utenti */}
             <Route path="/users" element={<Users />} />
+            <Route path="/templates" element={<TemplateManager />} />
+            <Route path="/appointment-templates" element={<AppointmentNotificationTemplates />} />
             {/* Aggiungi una route per gestire il reindirizzamento dopo l'autenticazione di Google Calendar */}
             <Route path="/auth/google/callback" element={<Navigate to="/settings?tab=calendar&auth=success" />} />
           </Routes>

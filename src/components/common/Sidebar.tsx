@@ -8,6 +8,8 @@ import EventIcon from '@mui/icons-material/Event';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import SettingsIcon from '@mui/icons-material/Settings';
 import LogoutIcon from '@mui/icons-material/Logout';
+import DescriptionIcon from '@mui/icons-material/Description';
+import EmailIcon from '@mui/icons-material/Email';
 
 const Sidebar = () => {
   const navigate = useNavigate();
@@ -18,6 +20,7 @@ const Sidebar = () => {
     { text: 'Utenti', icon: <PeopleIcon />, path: '/users' },
     { text: 'Appuntamenti', icon: <EventIcon />, path: '/appointments' },
     { text: 'Notifiche', icon: <NotificationsIcon />, path: '/notifications' },
+    { text: 'Template Notifiche', icon: <EmailIcon />, path: '/appointment-templates' },
     { text: 'Impostazioni', icon: <SettingsIcon />, path: '/settings' },
   ];
   

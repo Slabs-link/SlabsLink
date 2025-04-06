@@ -11,6 +11,7 @@ import { useLocation } from 'react-router-dom';
 import GoogleCalendarSelector from './GoogleCalendarSelector';
 import FileFolderPicker from '../common/FileFolderPicker';
 import MedicalOfficeSettings from './MedicalOfficeSettings';
+import GeneralSettings from './GeneralSettings';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -595,11 +596,36 @@ const Settings: React.FC = () => {
               </Tabs>
             </Box>
             
-            {/* Impostazioni Generali (ex License Settings) */}
+            {/* Impostazioni Generali */}
             <TabPanel value={tabValue} index={0}>
+              <Box sx={{ mb: 4 }}>
+                <GeneralSettings 
+                  settings={generalSettings} 
+                  onChange={setGeneralSettings} 
+                />
+              </Box>
               <Typography variant="h6" gutterBottom>Informazioni Generali</Typography>
               
               <Grid container spacing={3} sx={{ mb: 4 }}>
+                <Grid item xs={12} md={6}>
+                  <Paper sx={{ p: 2, height: '100%' }}>
+                    <Typography variant="subtitle1" fontWeight="bold" gutterBottom>Informazioni Azienda</Typography>
+                    
+                    <Box sx={{ mt: 2 }}>
+                      <TextField
+                        fullWidth
+                        label="Nome Azienda"
+                        name="clinicName"
+                        value={generalSettings.clinicName}
+                        onChange={handleGeneralSettingsChange}
+                        variant="outlined"
+                        margin="normal"
+                        helperText="Nome dell'azienda o dello studio medico che verrà utilizzato nelle notifiche"
+                      />
+                    </Box>
+                  </Paper>
+                </Grid>
+                
                 <Grid item xs={12} md={6}>
                   <Paper sx={{ p: 2, height: '100%' }}>
                     <Typography variant="subtitle1" fontWeight="bold" gutterBottom>Stato Licenza</Typography>
