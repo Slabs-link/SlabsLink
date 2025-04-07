@@ -159,137 +159,15 @@ app.get('/api/logs/status', (req, res) => {
   }
 });
 
-// NOTIFICATIONS ENDPOINTS - Super flexible implementation
-// GET /api/notifications
-app.get('/api/notifications', (req, res) => {
-  try {
-    logToFile('GET /api/notifications received');
-    const db = getDatabase();
-    
-    // Estrazione e validazione parametri
-    const statusFilter = typeof req.query.status === 'string' ? req.query.status : undefined;
-    const searchQuery = typeof req.query.search === 'string' ? req.query.search.trim() : undefined;
-    const page = Math.max(1, parseInt(req.query.page as string) || 1);
-    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit as string) || 10));
-    const offset = (page - 1) * limit;
-
-    // Costruzione query dinamica
-    let whereClauses: string[] = [];
-    let params: (string | number)[] = [];
-
-    if (statusFilter) {
-      whereClauses.push('LOWER(status) = ?');
-      params.push(statusFilter.toLowerCase());
-    }
-
-    if (searchQuery) {
-      whereClauses.push('(LOWER(message) LIKE LOWER(?) OR LOWER(patient_id) LIKE LOWER(?))');
-      params.push(`%${searchQuery}%`, `%${searchQuery}%`);
-    }
-
-    const where = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
-    
-    // Conteggi affidabili
-    interface CountResult {
-  count: number;
-}
-
-const totalCount = (db.prepare(`SELECT COUNT(*) as count FROM notifications ${where}`).get(params) as CountResult)?.count || 0;
-    const pendingCount = (db.prepare(`SELECT COUNT(*) as count FROM notifications WHERE LOWER(status) = 'pending' ${searchQuery ? 'AND (LOWER(message) LIKE LOWER(?) OR LOWER(patient_id) LIKE LOWER(?))' : ''}`).get(searchQuery ? [`%${searchQuery}%`, `%${searchQuery}%`] : []) as CountResult)?.count || 0;
-    const sentCount = (db.prepare(`SELECT COUNT(*) as count FROM notifications WHERE LOWER(status) = 'sent' ${searchQuery ? 'AND (LOWER(message) LIKE LOWER(?) OR LOWER(patient_id) LIKE LOWER(?))' : ''}`).get(searchQuery ? [`%${searchQuery}%`, `%${searchQuery}%`] : []) as CountResult)?.count || 0;
-    const failedCount = (db.prepare(`SELECT COUNT(*) as count FROM notifications WHERE LOWER(status) = 'failed' ${searchQuery ? 'AND (LOWER(message) LIKE LOWER(?) OR LOWER(patient_id) LIKE LOWER(?))' : ''}`).get(searchQuery ? [`%${searchQuery}%`, `%${searchQuery}%`] : []) as CountResult)?.count || 0;
-
-    // Recupero dati con paginazione
-    const notifications = db.prepare(
-      `SELECT * FROM notifications ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
-    ).all([...params, limit, offset]);
-
-    res.json({
-      notifications,
-      pagination: {
-        page,
-        limit,
-        total: totalCount,
-        pages: Math.ceil(totalCount / limit)
-      },
-      stats: {
-        pending_count: pendingCount,
-        sent_count: sentCount,
-        failed_count: failedCount,
-        total_count: totalCount
-      }
-    });
-
-  } catch (error) {
-    logToFile(`Errore GET /api/notifications: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    res.status(500).json({
-      error: 'Errore nel recupero delle notifiche',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-});
-
-// POST /api/notifications - Accept any format
-app.post('/api/notifications', (req, res) => {
-  logToFile('POST /api/notifications received');
-  
-  // Try to extract data from various possible formats
-  let patient_id, message, type;
-  
-  if (req.body) {
-    if (typeof req.body === 'string') {
-      try {
-        const parsed = JSON.parse(req.body);
-        patient_id = parsed.patient_id;
-        message = parsed.message;
-        type = parsed.type || 'custom';
-      } catch (e) {
-        if (e instanceof Error) {
-          logToFile(`Failed to parse body string: ${e.message}`);
-        }
-      }
-    } else {
-      patient_id = req.body.patient_id;
-      message = req.body.message;
-      type = req.body.type || 'custom';
-    }
-  }
-  
-  // If we have raw body data but couldn't parse it
-  if (!patient_id && (req as any).rawBody) {
-    try {
-      const parsed = JSON.parse((req as any).rawBody);
-      patient_id = parsed.patient_id;
-      message = parsed.message;
-      type = parsed.type || 'custom';
-    } catch (e) {
-      if (e instanceof Error) {
-        logToFile(`Failed to parse raw body: ${e.message}`);
-      }
-    }
-  }
-  
-  // Log what we extracted
-  logToFile(`Extracted data: patient_id=${patient_id}, message=${message}, type=${type}`);
-  
-  // Always return success for testing
-  res.status(201).json({ 
-    id: 1,
-    patient_id: patient_id || 'unknown',
-    message: message || 'No message',
-    type: type || 'custom',
-    status: 'pending',
-    created_at: new Date().toISOString()
-  });
-});
-
 // Import routes
 import licenseRoutes from './routes/license.routes';
 import settingsRoutes from './routes/settings.routes';
+import notificationsRoutes from './routes/notifications.routes';
 
 // Register routes
 app.use('/api/license', licenseRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/notifications', notificationsRoutes);
 // Mount the Google Calendar routes
 app.use('/api/google-calendar', googleCalendarRoutes);
 // Manteniamo anche il vecchio percorso per retrocompatibilità

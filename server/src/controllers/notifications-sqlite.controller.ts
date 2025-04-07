@@ -23,14 +23,53 @@ export const getAllNotifications = async (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     
+    // Estrazione e validazione parametri di filtro
+    const statusFilter = typeof req.query.status === 'string' ? req.query.status : undefined;
+    const userIdFilter = typeof req.query.user_id === 'string' ? req.query.user_id : undefined;
+    const searchQuery = typeof req.query.search === 'string' ? req.query.search.trim() : undefined;
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const pageSize = Math.max(1, Math.min(100, parseInt(req.query.pageSize as string) || 10));
+    const offset = (page - 1) * pageSize;
+    const sortField = typeof req.query.sort === 'string' ? req.query.sort : 'created_at';
+    const sortOrder = typeof req.query.order === 'string' && req.query.order.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+    
+    console.log('Parametri di filtro:', req.query);
+    
+    // Costruzione query dinamica
+    let whereClauses: string[] = [];
+    let params: (string | number)[] = [];
+    
+    if (statusFilter) {
+      whereClauses.push('LOWER(n.status) = LOWER(?)');
+      params.push(statusFilter);
+    }
+    
+    if (userIdFilter) {
+      whereClauses.push('n.user_id = ?');
+      params.push(userIdFilter);
+    }
+    
+    if (searchQuery) {
+      whereClauses.push('(LOWER(n.message) LIKE LOWER(?) OR LOWER(u.first_name) LIKE LOWER(?) OR LOWER(u.last_name) LIKE LOWER(?))');
+      params.push(`%${searchQuery}%`, `%${searchQuery}%`, `%${searchQuery}%`);
+    }
+    
+    const where = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+    
+    // Query per ottenere le notifiche filtrate e paginate con il tipo di appuntamento
     const notifications = db.prepare(`
-      SELECT n.*, u.first_name, u.last_name
+      SELECT n.*, u.first_name, u.last_name, u.phone, 
+             a.appointment_type_id, at.name as appointment_type_name
       FROM notifications n
       LEFT JOIN users u ON n.user_id = u.id
-      ORDER BY n.created_at DESC
-    `).all();
+      LEFT JOIN appointments a ON n.appointment_id = a.id
+      LEFT JOIN appointment_types at ON a.appointment_type_id = at.id
+      ${where}
+      ORDER BY n.${sortField} ${sortOrder}
+      LIMIT ? OFFSET ?
+    `).all([...params, pageSize, offset]);
     
-    // Calcola le statistiche delle notifiche
+    // Calcola le statistiche delle notifiche con gli stessi filtri (tranne paginazione)
     const stats = {
       total_count: 0,
       sent_count: 0,
@@ -39,29 +78,53 @@ export const getAllNotifications = async (req: Request, res: Response) => {
       categories: {}
     };
     
-    // Esegui query per ottenere i conteggi
-    const countStats = db.prepare(`
-      SELECT 
-        COUNT(*) as total_count,
-        SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) as sent_count,
-        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_count,
-        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_count
-      FROM notifications
-    `).get() as NotificationCountStats;
+    // Query per conteggio totale con filtri
+    const totalCountQuery = `
+      SELECT COUNT(*) as count
+      FROM notifications n
+      LEFT JOIN users u ON n.user_id = u.id
+      LEFT JOIN appointments a ON n.appointment_id = a.id
+      LEFT JOIN appointment_types at ON a.appointment_type_id = at.id
+      ${where}
+    `;
+    const totalCount = db.prepare(totalCountQuery).get(params) as { count: number };
+    stats.total_count = totalCount?.count || 0;
     
-    // Aggiorna le statistiche con i risultati della query
-    if (countStats) {
-      stats.total_count = countStats.total_count || 0;
-      stats.sent_count = countStats.sent_count || 0;
-      stats.pending_count = countStats.pending_count || 0;
-      stats.failed_count = countStats.failed_count || 0;
+    // Query per conteggio per stato con filtri
+    const statusCountsQuery = `
+      SELECT 
+        SUM(CASE WHEN LOWER(n.status) = 'sent' THEN 1 ELSE 0 END) as sent_count,
+        SUM(CASE WHEN LOWER(n.status) = 'pending' THEN 1 ELSE 0 END) as pending_count,
+        SUM(CASE WHEN LOWER(n.status) = 'failed' THEN 1 ELSE 0 END) as failed_count
+      FROM notifications n
+      LEFT JOIN users u ON n.user_id = u.id
+      LEFT JOIN appointments a ON n.appointment_id = a.id
+      LEFT JOIN appointment_types at ON a.appointment_type_id = at.id
+      ${where}
+    `;
+    const statusCounts = db.prepare(statusCountsQuery).get(params) as {
+      sent_count: number;
+      pending_count: number;
+      failed_count: number;
+    };
+    
+    if (statusCounts) {
+      stats.sent_count = statusCounts.sent_count || 0;
+      stats.pending_count = statusCounts.pending_count || 0;
+      stats.failed_count = statusCounts.failed_count || 0;
     }
     
     // Always return array even if empty
     return res.json({
       notifications: notifications || [],
       stats: stats,
-      success: true
+      success: true,
+      pagination: {
+        page,
+        pageSize,
+        total: stats.total_count,
+        pages: Math.ceil(stats.total_count / pageSize)
+      }
     });
   } catch (error: any) {
     console.error('Error getting notifications:', error);
@@ -81,9 +144,12 @@ export const getNotificationById = async (req: Request, res: Response) => {
     const db = getDatabase();
     
     const notification = db.prepare(`
-      SELECT n.*, u.first_name, u.last_name
+      SELECT n.*, u.first_name, u.last_name, 
+             a.appointment_type_id, at.name as appointment_type_name
       FROM notifications n
       JOIN users u ON n.user_id = u.id
+      LEFT JOIN appointments a ON n.appointment_id = a.id
+      LEFT JOIN appointment_types at ON a.appointment_type_id = at.id
       WHERE n.id = ?
     `).get(id) as Notification;
     
@@ -196,9 +262,12 @@ export const createNotification = async (req: Request, res: Response) => {
     
     // Get the created notification
     const newNotification = db.prepare(`
-      SELECT n.*, u.first_name, u.last_name
+      SELECT n.*, u.first_name, u.last_name,
+             a.appointment_type_id, at.name as appointment_type_name
       FROM notifications n
       JOIN users u ON n.user_id = u.id
+      LEFT JOIN appointments a ON n.appointment_id = a.id
+      LEFT JOIN appointment_types at ON a.appointment_type_id = at.id
       WHERE n.id = ?
     `).get(notificationId) as Notification;
     
@@ -250,9 +319,12 @@ export const updateNotificationStatus = async (req: Request, res: Response) => {
     
     // Get the updated notification
     const updatedNotification = db.prepare(`
-      SELECT n.*, u.first_name, u.last_name
+      SELECT n.*, u.first_name, u.last_name,
+             a.appointment_type_id, at.name as appointment_type_name
       FROM notifications n
       JOIN users u ON n.user_id = u.id
+      LEFT JOIN appointments a ON n.appointment_id = a.id
+      LEFT JOIN appointment_types at ON a.appointment_type_id = at.id
       WHERE n.id = ?
     `).get(id);
     
@@ -297,9 +369,12 @@ export const getPendingNotifications = async (req: Request, res: Response) => {
     const db = getDatabase();
     
     const notifications = db.prepare(`
-      SELECT n.*, u.phone, u.first_name, u.last_name
+      SELECT n.*, u.phone, u.first_name, u.last_name,
+             a.appointment_type_id, at.name as appointment_type_name
       FROM notifications n
       JOIN users u ON n.user_id = u.id
+      LEFT JOIN appointments a ON n.appointment_id = a.id
+      LEFT JOIN appointment_types at ON a.appointment_type_id = at.id
       WHERE n.status = 'pending'
       ORDER BY n.created_at ASC
     `).all();
@@ -324,9 +399,12 @@ export const processNotifications = async (req: Request, res: Response) => {
     const db = getDatabase();
     
     const pendingNotifications = db.prepare(`
-      SELECT n.*, u.phone, u.first_name, u.last_name
+      SELECT n.*, u.phone, u.first_name, u.last_name,
+             a.appointment_type_id, at.name as appointment_type_name
       FROM notifications n
       JOIN users u ON n.user_id = u.id
+      LEFT JOIN appointments a ON n.appointment_id = a.id
+      LEFT JOIN appointment_types at ON a.appointment_type_id = at.id
       WHERE n.status = 'pending'
       ORDER BY n.created_at ASC
     `).all() as NotificationWithUser[];
@@ -381,9 +459,12 @@ export const processSingleNotification = async (req: Request, res: Response) => 
     const db = getDatabase();
     
     const notification = db.prepare(`
-      SELECT n.*, u.phone, u.first_name, u.last_name
+      SELECT n.*, u.phone, u.first_name, u.last_name,
+             a.appointment_type_id, at.name as appointment_type_name
       FROM notifications n
       JOIN users u ON n.user_id = u.id
+      LEFT JOIN appointments a ON n.appointment_id = a.id
+      LEFT JOIN appointment_types at ON a.appointment_type_id = at.id
       WHERE n.id = ?
     `).get(id) as NotificationWithUser;
     
@@ -509,9 +590,12 @@ export const updateNotification = async (req: Request, res: Response) => {
     
     // Get the updated notification
     const updatedNotification = db.prepare(`
-      SELECT n.*, u.first_name, u.last_name
+      SELECT n.*, u.first_name, u.last_name,
+             a.appointment_type_id, at.name as appointment_type_name
       FROM notifications n
       JOIN users u ON n.user_id = u.id
+      LEFT JOIN appointments a ON n.appointment_id = a.id
+      LEFT JOIN appointment_types at ON a.appointment_type_id = at.id
       WHERE n.id = ?
     `).get(id);
     
@@ -632,9 +716,12 @@ export const createNotificationFromTemplate = async (req: Request, res: Response
     
     // Get the created notification
     const newNotification = db.prepare(`
-      SELECT n.*, u.first_name, u.last_name
+      SELECT n.*, u.first_name, u.last_name,
+             a.appointment_type_id, at.name as appointment_type_name
       FROM notifications n
       JOIN users u ON n.user_id = u.id
+      LEFT JOIN appointments a ON n.appointment_id = a.id
+      LEFT JOIN appointment_types at ON a.appointment_type_id = at.id
       WHERE n.id = ?
     `).get(notificationId) as Notification;
     
@@ -660,9 +747,12 @@ export const resendNotification = async (req: Request, res: Response) => {
     }
 
     const notification = db.prepare(`
-      SELECT n.*, u.phone, u.first_name, u.last_name
+      SELECT n.*, u.phone, u.first_name, u.last_name,
+             a.appointment_type_id, at.name as appointment_type_name
       FROM notifications n
       JOIN users u ON n.user_id = u.id
+      LEFT JOIN appointments a ON n.appointment_id = a.id
+      LEFT JOIN appointment_types at ON a.appointment_type_id = at.id
       WHERE n.id = ?
     `).get(id) as NotificationWithUser;
     
@@ -683,13 +773,16 @@ export const resendNotification = async (req: Request, res: Response) => {
     
     // Get the updated notification
     const updatedNotification = db.prepare(`
-      SELECT n.*, u.first_name, u.last_name
+      SELECT n.*, u.first_name, u.last_name,
+             a.appointment_type_id, at.name as appointment_type_name
       FROM notifications n
       JOIN users u ON n.user_id = u.id
+      LEFT JOIN appointments a ON n.appointment_id = a.id
+      LEFT JOIN appointment_types at ON a.appointment_type_id = at.id
       WHERE n.id = ?
     `).get(id);
     
-    return res.json({ notifications: notification || [] });
+    return res.json(updatedNotification);
   } catch (error: any) {
     console.error('Error resending notification:', error);
     return res.status(500).json({ 

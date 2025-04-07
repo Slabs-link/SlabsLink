@@ -96,7 +96,6 @@ interface NotificationState {
 // Interfaccia per i filtri
 interface FilterState {
   status: string;
-  type: string;
   userId: string; // Cambiato da patientId a userId
 }
 
@@ -130,7 +129,6 @@ const Notifications: React.FC = () => {
   });
   const [filters, setFilters] = useState<FilterState>({
     status: '',
-    type: '',
     userId: ''
   });
   const [pagination, setPagination] = useState<PaginationState>({
@@ -158,6 +156,8 @@ const Notifications: React.FC = () => {
   // Stato per gli appuntamenti
   const [appointments, setAppointments] = useState<any[]>([]);
 
+  // Effetto per reagire ai cambiamenti dei filtri
+
   const fetchNotifications = useCallback(async () => {
     setLoading(true);
     try {
@@ -165,11 +165,13 @@ const Notifications: React.FC = () => {
       queryParams.append('page', pagination?.page?.toString() ?? '1');
       queryParams.append('pageSize', pagination?.pageSize?.toString() ?? '10');
       
-      // Correzione: assicuriamoci che i filtri vengano passati correttamente all'API
+      // Applica i filtri alla query
       if (filters.status) queryParams.append('status', filters.status);
-      if (filters.type) queryParams.append('type', filters.type);
-      // Importante: assicuriamoci di passare user_id e non userId al backend
       if (filters.userId) queryParams.append('user_id', filters.userId);
+      
+      // Aggiungi l'ordinamento per data di creazione
+      queryParams.append('sort', 'created_at');
+      queryParams.append('order', 'desc');
       
       console.log('Parametri di filtro:', Object.fromEntries(queryParams));
       // Assicuriamoci che l'URL sia corretto e che i parametri vengano passati correttamente
@@ -250,19 +252,16 @@ const Notifications: React.FC = () => {
       setLoading(false);
     }
   }, [filters, pagination, selectedNotifications]);
-
-  // Funzione per caricare le notifiche ogni 5 minuti invece che ogni 5 secondi
-  useEffect(() => {
-    fetchNotifications(); // Carica le notifiche all'avvio
-    const interval = setInterval(fetchNotifications, 300000); // 5 minuti = 300000 ms
-    return () => clearInterval(interval);
-  }, [fetchNotifications]);
   
   // Effetto per reagire ai cambiamenti dei filtri
   useEffect(() => {
     // Forziamo il ricaricamento delle notifiche quando cambiano i filtri
-    fetchNotifications();
-  }, [filters, pagination?.page, pagination?.pageSize, fetchNotifications]);
+    const timer = setTimeout(() => {
+      fetchNotifications();
+    }, 1000); // Aumentiamo il debounce a 1000ms per ridurre il carico sul server
+    
+    return () => clearTimeout(timer);
+  }, [filters, pagination?.page, pagination?.pageSize]); // Rimosso fetchNotifications dalle dipendenze per evitare loop infiniti
 
   // Funzione per caricare i pazienti
   const fetchPatients = async () => {
@@ -599,7 +598,7 @@ const Notifications: React.FC = () => {
         return status;
     }
   };
-
+  
   // Funzione per tradurre il tipo
   const translateType = (type: string): string => {
     switch (type) {
@@ -607,6 +606,8 @@ const Notifications: React.FC = () => {
         return 'Conferma appuntamento';
       case 'appointment_reminder':
         return 'Promemoria appuntamento';
+      case 'appointment_created':
+        return 'Appuntamento creato';
       case 'custom':
         return 'Personalizzata';
       default:
@@ -977,20 +978,7 @@ const Notifications: React.FC = () => {
             </Select>
           </FormControl>
           
-          <FormControl sx={{ minWidth: 150 }}>
-            <InputLabel>Tipo</InputLabel>
-            <Select
-              value={filters.type}
-              label="Tipo"
-              onChange={(e) => handleFilterChange('type', e.target.value)}
-              size="small"
-            >
-              <MenuItem value="">Tutti</MenuItem>
-              <MenuItem value="appointment_confirmation">Conferma appuntamento</MenuItem>
-              <MenuItem value="appointment_reminder">Promemoria appuntamento</MenuItem>
-              <MenuItem value="custom">Personalizzata</MenuItem>
-            </Select>
-          </FormControl>
+          {/* Filtro per tipo rimosso */}
           
           <FormControl sx={{ minWidth: 200 }}>
             <InputLabel>Utente</InputLabel>
@@ -1013,7 +1001,7 @@ const Notifications: React.FC = () => {
             variant="outlined"
             startIcon={<RefreshIcon />}
             onClick={() => {
-              setFilters({ status: '', type: '', userId: '' }),
+              setFilters({ status: '', userId: '' }),
               setPagination((prev) => ({ ...prev, page: 1 }))
             }}>
             Reset filtri
@@ -1121,7 +1109,6 @@ const Notifications: React.FC = () => {
                     )}
                     <TableCell>Stato</TableCell>
                     <TableCell>Utente</TableCell>
-                    <TableCell>Tipo</TableCell>
                     <TableCell>Messaggio</TableCell>
                     <TableCell>Data creazione</TableCell>
                     <TableCell>Data invio</TableCell>
@@ -1165,7 +1152,6 @@ const Notifications: React.FC = () => {
                           ? `${notification.first_name} ${notification.last_name}` 
                           : notification.patient_name || '-'}
                       </TableCell>
-                      <TableCell>{translateType(notification.type)}</TableCell>
                       <TableCell>
                         <Typography 
                           variant="body2" 
