@@ -101,11 +101,17 @@ export class NotificationService {
   public replaceTemplateVariables(template: string, variables: NotificationVariables): string {
     let result = template;
     
-    // Sostituisci il nome dell'azienda
+    // Aggiungi il nome dell'azienda alle variabili se non è già presente
+    const variablesWithClinic = {
+      ...variables,
+      clinic_name: this.companyName
+    };
+    
+    // Sostituisci il nome dell'azienda (per retrocompatibilità)
     result = result.replace(/SlabsLink/g, this.companyName);
     
     // Sostituisci le variabili nel formato {{variable}}
-    for (const [key, value] of Object.entries(variables)) {
+    for (const [key, value] of Object.entries(variablesWithClinic)) {
       const regex = new RegExp(`\{\{${key}\}\}`, 'g');
       result = result.replace(regex, value);
     }

@@ -476,6 +476,19 @@ const Settings: React.FC = () => {
             userFilesPath: medicalOfficeResponse.data.userFilesPath || 'uploads/users'
           });
         }
+        
+        // Carica le impostazioni generali
+        const generalResponse = await axios.get(`${API_BASE_URL}/settings/general`);
+        if (generalResponse.data) {
+          setGeneralSettings({
+            clinicName: generalResponse.data.clinicName || '',
+            address: generalResponse.data.address || '',
+            phone: generalResponse.data.phone || '',
+            email: generalResponse.data.email || '',
+            website: generalResponse.data.website || ''
+          });
+          console.log('Impostazioni generali caricate:', generalResponse.data);
+        }
       } catch (error) {
         console.error('Errore durante il caricamento delle impostazioni:', error);
         // Se le impostazioni non esistono, utilizziamo i valori predefiniti
@@ -604,27 +617,8 @@ const Settings: React.FC = () => {
                   onChange={setGeneralSettings} 
                 />
               </Box>
-              <Typography variant="h6" gutterBottom>Informazioni Generali</Typography>
-              
               <Grid container spacing={3} sx={{ mb: 4 }}>
-                <Grid item xs={12} md={6}>
-                  <Paper sx={{ p: 2, height: '100%' }}>
-                    <Typography variant="subtitle1" fontWeight="bold" gutterBottom>Informazioni Azienda</Typography>
-                    
-                    <Box sx={{ mt: 2 }}>
-                      <TextField
-                        fullWidth
-                        label="Nome Azienda"
-                        name="clinicName"
-                        value={generalSettings.clinicName}
-                        onChange={handleGeneralSettingsChange}
-                        variant="outlined"
-                        margin="normal"
-                        helperText="Nome dell'azienda o dello studio medico che verrà utilizzato nelle notifiche"
-                      />
-                    </Box>
-                  </Paper>
-                </Grid>
+                
                 
                 <Grid item xs={12} md={6}>
                   <Paper sx={{ p: 2, height: '100%' }}>

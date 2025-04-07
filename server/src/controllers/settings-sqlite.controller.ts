@@ -46,6 +46,63 @@ export const getAllSettings = async (req: Request, res: Response) => {
   }
 };
 
+// Get general settings
+export const getGeneralSettings = async (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    
+    // Verifica se la tabella app_settings esiste
+    const tableExists = db.prepare(`
+      SELECT name FROM sqlite_master 
+      WHERE type='table' AND name='app_settings'
+    `).get();
+    
+    if (!tableExists) {
+      return res.json({ 
+        clinicName: 'SlabsLink',
+        address: '',
+        phone: '',
+        email: '',
+        website: ''
+      });
+    }
+    
+    const setting = db.prepare('SELECT * FROM app_settings WHERE key = ?').get('general') as AppSetting | undefined;
+    
+    if (!setting) {
+      return res.json({ 
+        clinicName: 'SlabsLink',
+        address: '',
+        phone: '',
+        email: '',
+        website: ''
+      });
+    }
+    
+    // Converti il valore JSON in oggetto JavaScript
+    let value;
+    try {
+      value = JSON.parse(setting.value);
+    } catch (error) {
+      value = {
+        clinicName: 'SlabsLink',
+        address: '',
+        phone: '',
+        email: '',
+        website: ''
+      };
+    }
+    
+    return res.json(value);
+  } catch (error: any) {
+    console.error('Error getting general settings:', error);
+    return res.status(500).json({ 
+      message: 'Error retrieving general settings', 
+      error: error.message 
+    });
+  }
+};
+
 // Get whatsapp settings
 export const getWhatsappSettings = async (req: Request, res: Response) => {
   try {

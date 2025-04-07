@@ -29,16 +29,50 @@ const GeneralSettings: React.FC<GeneralSettingsProps> = ({ settings, onChange, o
   const [loading, setLoading] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  
   const API_BASE_URL = 'http://localhost:3001/api';
+
+  useEffect(() => {
+    const fetchSettings = async () => {
+      setLoading(true);
+      try {
+        const response = await axios.get(`${API_BASE_URL}/settings/general`);
+        if (response.data) {
+          let generalSettings;
+          try {
+            // Prima verifica se response.data.value esiste ed è una stringa
+            if (response.data.value && typeof response.data.value === 'string') {
+              generalSettings = JSON.parse(response.data.value);
+            } else if (response.data.general) {
+              // Se c'è un oggetto general, usa quello
+              generalSettings = response.data.general;
+            } else {
+              // Altrimenti usa direttamente response.data
+              generalSettings = response.data;
+            }
+          } catch (e) {
+            console.error('Errore nel parsing delle impostazioni:', e);
+            generalSettings = {};
+          }
+          const settings = {
+            clinicName: generalSettings.clinicName || '',
+            address: generalSettings.address || '',
+            phone: generalSettings.phone || '',
+            email: generalSettings.email || '',
+            website: generalSettings.website || ''
+          };
+          console.log('Impostazioni generali caricate:', settings);
+          onChange(settings);
+        }
+      } catch (error) {
+        console.error('Errore durante il recupero delle impostazioni generali:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchSettings();
+  }, []);
   
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    onChange({
-      ...settings,
-      [name]: value
-    });
-  };
   
   const handleSaveSettings = async () => {
     if (onSave) {
@@ -81,7 +115,7 @@ const GeneralSettings: React.FC<GeneralSettingsProps> = ({ settings, onChange, o
           {saveError}
         </Alert>
       )}
-      
+
       {loading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
           <CircularProgress />
@@ -89,87 +123,30 @@ const GeneralSettings: React.FC<GeneralSettingsProps> = ({ settings, onChange, o
       ) : (
         <Paper sx={{ p: 3 }}>
           <Grid container spacing={3}>
-            <Grid item xs={12}>
-              <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-                Informazioni Studio/Azienda
-              </Typography>
-            </Grid>
-            
             <Grid item xs={12} md={6}>
               <TextField
                 fullWidth
-                label="Nome Studio/Azienda"
+                label="Nome Attività"
                 name="clinicName"
                 value={settings.clinicName}
-                onChange={handleInputChange}
-                variant="outlined"
-                margin="normal"
-                required
-                helperText="Questo nome verrà utilizzato nelle notifiche al posto di 'SlabsLink'"
-              />
-            </Grid>
-            
-            <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                label="Indirizzo"
-                name="address"
-                value={settings.address}
-                onChange={handleInputChange}
+                onChange={(e) => onChange({ ...settings, clinicName: e.target.value })}
                 variant="outlined"
                 margin="normal"
               />
             </Grid>
             
-            <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                label="Telefono"
-                name="phone"
-                value={settings.phone}
-                onChange={handleInputChange}
-                variant="outlined"
-                margin="normal"
-              />
+
+            <Grid item xs={12} sx={{ mt: 3 }}>
+              <Button
+                variant="contained"
+                color="primary"
+                startIcon={<SaveIcon />}
+                onClick={handleSaveSettings}
+                disabled={loading}
+              >
+                Salva Impostazioni
+              </Button>
             </Grid>
-            
-            <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                label="Email"
-                name="email"
-                value={settings.email}
-                onChange={handleInputChange}
-                variant="outlined"
-                margin="normal"
-              />
-            </Grid>
-            
-            <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                label="Sito Web"
-                name="website"
-                value={settings.website}
-                onChange={handleInputChange}
-                variant="outlined"
-                margin="normal"
-              />
-            </Grid>
-            
-            {!onSave && (
-              <Grid item xs={12} sx={{ mt: 3 }}>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  startIcon={<SaveIcon />}
-                  onClick={handleSaveSettings}
-                  disabled={loading}
-                >
-                  Salva Impostazioni
-                </Button>
-              </Grid>
-            )}
           </Grid>
         </Paper>
       )}

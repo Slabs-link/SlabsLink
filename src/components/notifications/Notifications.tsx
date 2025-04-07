@@ -165,10 +165,14 @@ const Notifications: React.FC = () => {
       queryParams.append('page', pagination?.page?.toString() ?? '1');
       queryParams.append('pageSize', pagination?.pageSize?.toString() ?? '10');
       
+      // Correzione: assicuriamoci che i filtri vengano passati correttamente all'API
       if (filters.status) queryParams.append('status', filters.status);
       if (filters.type) queryParams.append('type', filters.type);
-      if (filters.userId) queryParams.append('userId', filters.userId); // Filtro per userId invece di patientId
+      // Importante: assicuriamoci di passare user_id e non userId al backend
+      if (filters.userId) queryParams.append('user_id', filters.userId);
       
+      console.log('Parametri di filtro:', Object.fromEntries(queryParams));
+      // Assicuriamoci che l'URL sia corretto e che i parametri vengano passati correttamente
       const response = await axios.get(`http://localhost:3001/api/notifications?${queryParams.toString()}`);
       console.log('Risposta API notifiche:', response.data);
       
@@ -256,9 +260,9 @@ const Notifications: React.FC = () => {
   
   // Effetto per reagire ai cambiamenti dei filtri
   useEffect(() => {
+    // Forziamo il ricaricamento delle notifiche quando cambiano i filtri
     fetchNotifications();
-  }, [filters, pagination?.page, pagination?.pageSize]);
-
+  }, [filters, pagination?.page, pagination?.pageSize, fetchNotifications]);
 
   // Funzione per caricare i pazienti
   const fetchPatients = async () => {
@@ -523,7 +527,7 @@ const Notifications: React.FC = () => {
   const handleFilterChange = (field: keyof FilterState, value: string) => {
     setFilters(prev => ({ ...prev, [field]: value }));
     setPagination(prev => ({ ...prev, page: 1 }));
-    // Utilizziamo useEffect per reagire ai cambiamenti di filters invece di chiamare fetchNotifications qui
+    // Non chiamiamo fetchNotifications qui perché verrà chiamato dall'useEffect
   };
   
   // Funzione per gestire la selezione/deselezione di una notifica
@@ -1176,7 +1180,7 @@ const Notifications: React.FC = () => {
                         </Typography>
                       </TableCell>
                       <TableCell>{formatDate(notification.created_at)}</TableCell>
-                      <TableCell>{formatDate(notification.sent_at)}</TableCell>
+                      <TableCell>{notification.status === 'sent' ? formatDate(notification.sent_at) : '-'}</TableCell>
                       <TableCell>
                         <Box sx={{ display: 'flex' }}>
                           {notification.status === 'pending' && (

@@ -99,7 +99,8 @@ const AppointmentNotificationTemplates: React.FC = () => {
     { id: 'appointment_title', label: 'Titolo Appuntamento', variable: '{{appointment_title}}', description: 'Titolo dell\'appuntamento' },
     { id: 'appointment_date', label: 'Data Appuntamento', variable: '{{appointment_date}}', description: 'Data dell\'appuntamento' },
     { id: 'appointment_time', label: 'Ora Appuntamento', variable: '{{appointment_time}}', description: 'Ora dell\'appuntamento' },
-    { id: 'patient_name', label: 'Nome Paziente', variable: '{{patient_name}}', description: 'Nome completo del paziente' }
+    { id: 'patient_name', label: 'Nome Paziente', variable: '{{patient_name}}', description: 'Nome completo del paziente' },
+    { id: 'clinic_name', label: 'Nome Studio/Azienda', variable: '{{clinic_name}}', description: 'Nome dello studio o dell\'azienda' }
   ]);
 
   // Carica i template all'avvio

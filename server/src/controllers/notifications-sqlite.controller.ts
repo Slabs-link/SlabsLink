@@ -2,6 +2,14 @@ import { Request, Response } from 'express';
 import { getDatabase } from '../config/database-sqlite';
 import { Template, User, Appointment, Notification } from '../interfaces/notifications.interface';
 
+// Interfaccia per le impostazioni dell'app
+interface AppSetting {
+  key: string;
+  value: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
 // Interfaccia per le statistiche delle notifiche
 interface NotificationCountStats {
   total_count: number;
@@ -453,6 +461,27 @@ export const updateNotification = async (req: Request, res: Response) => {
       
       finalMessage = template.content;
       
+      // Ottieni le impostazioni generali per il nome dell'azienda
+      const generalSettings = db.prepare('SELECT * FROM app_settings WHERE key = ?').get('general') as AppSetting;
+      let clinicName = 'SlabsLink';
+      
+      if (generalSettings) {
+        try {
+          const settings = JSON.parse(generalSettings.value);
+          if (settings && settings.clinicName) {
+            clinicName = settings.clinicName;
+          }
+        } catch (error) {
+          console.error('Errore nel parsing delle impostazioni generali:', error);
+        }
+      }
+      
+      // Sostituisci la variabile clinic_name
+      finalMessage = finalMessage
+        .replace('{clinic_name}', clinicName)
+        .replace(/\{\{clinic_name\}\}/g, clinicName)
+        .replace(/SlabsLink/g, clinicName); // Retrocompatibilità
+      
       // Replace variables if provided
       if (variables) {
         Object.keys(variables).forEach(key => {
@@ -544,10 +573,28 @@ export const createNotificationFromTemplate = async (req: Request, res: Response
     // Get user details for variable replacement
     const user = db.prepare('SELECT first_name, last_name FROM users WHERE id = ?').get(user_id) as User;
     
+    // Ottieni le impostazioni generali per il nome dell'azienda
+    const generalSettings = db.prepare('SELECT * FROM app_settings WHERE key = ?').get('general') as AppSetting;
+    let clinicName = 'SlabsLink';
+    
+    if (generalSettings) {
+      try {
+        const settings = JSON.parse(generalSettings.value);
+        if (settings && settings.clinicName) {
+          clinicName = settings.clinicName;
+        }
+      } catch (error) {
+        console.error('Errore nel parsing delle impostazioni generali:', error);
+      }
+    }
+    
     // Replace user variables
     finalMessage = finalMessage
       .replace('{first_name}', user.first_name)
-      .replace('{last_name}', user.last_name);
+      .replace('{last_name}', user.last_name)
+      .replace('{clinic_name}', clinicName)
+      .replace(/\{\{clinic_name\}\}/g, clinicName)
+      .replace(/SlabsLink/g, clinicName); // Retrocompatibilità
     
     // Replace appointment variables if appointment_id is provided
     if (appointment_id) {
@@ -720,10 +767,27 @@ export const createAppointmentNotification = async (req: Request, res: Response)
     // Prepara il messaggio con le variabili sostituite
     let finalMessage = template.content;
     
+    // Ottieni le impostazioni generali per il nome dell'azienda
+    const generalSettings = db.prepare('SELECT * FROM app_settings WHERE key = ?').get('general') as AppSetting;
+    let clinicName = 'SlabsLink';
+    
+    if (generalSettings) {
+      try {
+        const settings = JSON.parse(generalSettings.value);
+        if (settings && settings.clinicName) {
+          clinicName = settings.clinicName;
+        }
+      } catch (error) {
+        console.error('Errore nel parsing delle impostazioni generali:', error);
+      }
+    }
+    
     // Sostituisci le variabili dell'utente
     finalMessage = finalMessage
       .replace(/\{\{first_name\}\}|\{first_name\}/g, user.first_name || '')
-      .replace(/\{\{last_name\}\}|\{last_name\}/g, user.last_name || '');
+      .replace(/\{\{last_name\}\}|\{last_name\}/g, user.last_name || '')
+      .replace(/\{\{clinic_name\}\}|\{clinic_name\}/g, clinicName)
+      .replace(/SlabsLink/g, clinicName); // Retrocompatibilità
     
     // Sostituisci le variabili dell'appuntamento
     finalMessage = finalMessage

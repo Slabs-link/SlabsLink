@@ -358,6 +358,10 @@ const NotificationSender: React.FC<NotificationSenderProps> = ({
                         }
                         return match;
                       }
+                      if (variable === 'clinic_name') {
+                        // Usa il nome dell'azienda dal servizio di notifica
+                        return notificationService.getCompanyName();
+                      }
                       return templateVariables[variable] || match;
                     }
                   )}
