@@ -43,6 +43,7 @@ export const getAvailableCalendars = async (req: Request, res: Response) => {
  * Imposta il calendario selezionato per la sincronizzazione
  * @param req - Express request object
  * @param res - Express response object
+ * @deprecated Utilizzare setSelectedCalendars per supportare la selezione multipla
  */
 export const setSelectedCalendar = async (req: Request, res: Response) => {
   try {
@@ -78,6 +79,50 @@ export const setSelectedCalendar = async (req: Request, res: Response) => {
     return res.status(500).json({ 
       success: false,
       message: 'Errore durante la selezione del calendario',
+      error: error instanceof Error ? error.message : 'Errore sconosciuto'
+    });
+  }
+};
+
+/**
+ * Imposta i calendari selezionati per la sincronizzazione
+ * @param req - Express request object
+ * @param res - Express response object
+ */
+export const setSelectedCalendars = async (req: Request, res: Response) => {
+  try {
+    console.log('[Google Calendar Management Controller] Setting selected calendars');
+    
+    const { calendarIds } = req.body;
+    
+    if (!calendarIds || !Array.isArray(calendarIds) || calendarIds.length === 0) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Lista di ID calendari mancante o non valida'
+      });
+    }
+    
+    // Verifica se il servizio è autenticato
+    const isAuthenticated = await googleCalendarService.isServiceAuthenticated();
+    if (!isAuthenticated) {
+      return res.status(401).json({ 
+        success: false,
+        message: 'Google Calendar non autenticato. Autorizza prima l\'accesso.'
+      });
+    }
+    
+    // Imposta i calendari selezionati
+    await googleCalendarService.setSelectedCalendars(calendarIds);
+    
+    return res.json({
+      success: true,
+      message: 'Calendari selezionati con successo'
+    });
+  } catch (error) {
+    console.error('Errore durante la selezione dei calendari:', error);
+    return res.status(500).json({ 
+      success: false,
+      message: 'Errore durante la selezione dei calendari',
       error: error instanceof Error ? error.message : 'Errore sconosciuto'
     });
   }

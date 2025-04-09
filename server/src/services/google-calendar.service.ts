@@ -3058,6 +3058,7 @@ export class GoogleCalendarService {
 
   /**
    * Imposta il calendario selezionato per la sincronizzazione
+   * @deprecated Utilizzare setSelectedCalendars per supportare la selezione multipla
    */
   async setSelectedCalendar(calendarId: string): Promise<void> {
     this.db = getDatabase();
@@ -3095,6 +3096,9 @@ export class GoogleCalendarService {
       const calendarSettings = JSON.parse(setting.value);
       calendarSettings.selectedCalendarId = calendarId;
       
+      // Aggiorna anche il nuovo campo per la selezione multipla
+      calendarSettings.selectedCalendarIds = [calendarId];
+      
       const updateStmt = this.db.prepare(
         'UPDATE app_settings SET value = ? WHERE key = ?'
       );
@@ -3106,6 +3110,78 @@ export class GoogleCalendarService {
       console.log(`Calendario selezionato: ${response.data.summary} (${calendarId})`);
     } catch (error) {
       console.error('Errore durante la selezione del calendario:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Imposta i calendari selezionati per la sincronizzazione
+   * @param calendarIds - Array di ID dei calendari selezionati
+   */
+  async setSelectedCalendars(calendarIds: string[]): Promise<void> {
+    this.db = getDatabase();
+    if (!this.db) throw new Error('Database connection failed');
+    
+    const stmt = this.db.prepare(
+      'SELECT * FROM app_settings WHERE key = ?'
+    );
+    const setting = stmt.get('calendar') as AppSetting;
+    
+    if (!setting) {
+      throw new Error('Impostazioni di Google Calendar non configurate');
+    }
+  
+    try {
+      // Verifica che il servizio sia configurato
+      if (!this.calendar) {
+        await this.configure();
+      }
+      
+      if (!this.calendar) {
+        throw new Error('Google Calendar service non autenticato');
+      }
+      
+      // Verifica che tutti i calendari esistano
+      const validCalendarIds: string[] = [];
+      const calendarSummaries: string[] = [];
+      
+      for (const calendarId of calendarIds) {
+        try {
+          const response = await this.calendar.calendarList.get({
+            calendarId: calendarId
+          });
+          
+          if (response.data) {
+            validCalendarIds.push(calendarId);
+            calendarSummaries.push(response.data.summary || calendarId);
+          }
+        } catch (error) {
+          console.warn(`Calendario con ID ${calendarId} non trovato o non accessibile`);
+        }
+      }
+      
+      if (validCalendarIds.length === 0) {
+        throw new Error('Nessun calendario valido selezionato');
+      }
+      
+      // Aggiorna le impostazioni nel database
+      const calendarSettings = JSON.parse(setting.value);
+      
+      // Aggiorna sia il campo legacy che quello nuovo
+      calendarSettings.selectedCalendarId = validCalendarIds[0]; // Per retrocompatibilità
+      calendarSettings.selectedCalendarIds = validCalendarIds;
+      
+      const updateStmt = this.db.prepare(
+        'UPDATE app_settings SET value = ? WHERE key = ?'
+      );
+      updateStmt.run(
+        JSON.stringify(calendarSettings),
+        'calendar'
+      );
+      
+      console.log(`Calendari selezionati: ${calendarSummaries.join(', ')}`);
+    } catch (error) {
+      console.error('Errore durante la selezione dei calendari:', error);
       throw error;
     }
   }

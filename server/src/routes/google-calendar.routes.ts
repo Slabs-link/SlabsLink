@@ -2,7 +2,7 @@ import express from 'express';
 import { Router, Request, Response } from 'express';
 import { getAuthUrl, handleAuthCallback, handleWebhook, setupWebhook, getCalendarEvents, syncAppointments, testSyncAppointment, checkIntegrationStatus, getBookingLink, syncFromGoogleCalendar } from '../controllers/google-calendar.controller';
 import { getAuthStatus } from '../controllers/google-calendar-auth.controller';
-import { getAvailableCalendars, setSelectedCalendar } from '../controllers/google-calendar-management.controller';
+import { getAvailableCalendars, setSelectedCalendar, setSelectedCalendars } from '../controllers/google-calendar-management.controller';
 import { createCalendar } from '../controllers/google-calendar-create.controller';
 import { GoogleCalendarService } from '../services/google-calendar.service';
 import { Appointment } from '../interfaces/appointment.interface';
@@ -484,7 +484,8 @@ router.post('/webhook-setup', async (req, res) => {
 router.get('/calendars', getAvailableCalendars);
 
 // Endpoint per impostare il calendario selezionato
-router.post('/select-calendar', setSelectedCalendar);
+router.post('/select-calendar', setSelectedCalendar); // Mantenuto per retrocompatibilità
+router.post('/select-calendars', setSelectedCalendars); // Nuovo endpoint per selezione multipla
 
 // Endpoint per creare un nuovo calendario
 router.post('/create-calendar', createCalendar);

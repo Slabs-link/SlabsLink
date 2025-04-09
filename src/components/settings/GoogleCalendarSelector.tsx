@@ -3,9 +3,6 @@ import {
   Box,
   Typography,
   FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
   Button,
   TextField,
   Dialog,
@@ -16,9 +13,15 @@ import {
   Alert,
   Paper,
   Divider,
-  SelectChangeEvent
+  List,
+  ListItem,
+  ListItemText,
+  Checkbox,
+  FormGroup,
+  FormControlLabel
 } from '@mui/material';
 import axios from 'axios';
+import RefreshIcon from '@mui/icons-material/Refresh';
 
 interface Calendar {
   id: string;
@@ -26,14 +29,18 @@ interface Calendar {
 }
 
 interface GoogleCalendarSelectorProps {
-  selectedCalendarId: string;
-  onCalendarSelect: (calendarId: string) => void;
+  selectedCalendarId: string; // Mantenuto per retrocompatibilità
+  onCalendarSelect: (calendarId: string) => void; // Mantenuto per retrocompatibilità
+  selectedCalendarIds?: string[]; // Nuovo campo per supportare selezione multipla
+  onCalendarsSelect?: (calendarIds: string[]) => void; // Nuovo callback per selezione multipla
   disabled?: boolean;
 }
 
 const GoogleCalendarSelector: React.FC<GoogleCalendarSelectorProps> = ({
   selectedCalendarId,
   onCalendarSelect,
+  selectedCalendarIds = [],
+  onCalendarsSelect,
   disabled = false
 }) => {
   const [calendars, setCalendars] = useState<Calendar[]>([]);
@@ -45,6 +52,9 @@ const GoogleCalendarSelector: React.FC<GoogleCalendarSelectorProps> = ({
   const [creatingCalendar, setCreatingCalendar] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createSuccess, setCreateSuccess] = useState(false);
+  
+  // Stato locale per i calendari selezionati
+  const [selectedIds, setSelectedIds] = useState<string[]>(selectedCalendarIds.length > 0 ? selectedCalendarIds : [selectedCalendarId].filter(id => id));
 
   const API_BASE_URL = 'http://localhost:3001/api';
 
@@ -73,23 +83,47 @@ const GoogleCalendarSelector: React.FC<GoogleCalendarSelectorProps> = ({
     }
   }, [disabled]);
 
-  // Gestisce la selezione di un calendario
-  const handleCalendarChange = async (event: SelectChangeEvent<string>, child: React.ReactNode) => {
-    const calendarId = event.target.value;
-    onCalendarSelect(calendarId);
+  // Gestisce la selezione multipla dei calendari
+  const handleCalendarToggle = async (calendarId: string) => {
+    let newSelectedIds: string[];
+    
+    if (selectedIds.includes(calendarId)) {
+      // Rimuovi il calendario se già selezionato
+      newSelectedIds = selectedIds.filter(id => id !== calendarId);
+    } else {
+      // Aggiungi il calendario se non è selezionato
+      newSelectedIds = [...selectedIds, calendarId];
+    }
+    
+    // Assicurati che ci sia sempre almeno un calendario selezionato
+    if (newSelectedIds.length === 0) {
+      setError('Devi selezionare almeno un calendario');
+      return;
+    }
+    
+    setSelectedIds(newSelectedIds);
+    
+    // Chiama entrambi i callback per retrocompatibilità
+    if (onCalendarSelect) {
+      onCalendarSelect(newSelectedIds[0]); // Per retrocompatibilità
+    }
+    
+    if (onCalendarsSelect) {
+      onCalendarsSelect(newSelectedIds);
+    }
     
     // Invia la selezione al server
     try {
       setLoading(true);
-      const response = await axios.post(`${API_BASE_URL}/google-calendar/select-calendar`, { calendarId });
+      const response = await axios.post(`${API_BASE_URL}/google-calendar/select-calendars`, { calendarIds: newSelectedIds });
       if (response.data.success) {
-        console.log('Calendario selezionato salvato con successo sul server');
+        console.log('Calendari selezionati salvati con successo sul server');
       } else {
-        setError(response.data.message || 'Errore durante il salvataggio della selezione del calendario');
+        setError(response.data.message || 'Errore durante il salvataggio della selezione dei calendari');
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Errore durante il salvataggio della selezione del calendario');
-      console.error('Errore durante il salvataggio della selezione del calendario:', err);
+      setError(err.response?.data?.message || 'Errore durante il salvataggio della selezione dei calendari');
+      console.error('Errore durante il salvataggio della selezione dei calendari:', err);
     } finally {
       setLoading(false);
     }
@@ -132,7 +166,21 @@ const GoogleCalendarSelector: React.FC<GoogleCalendarSelectorProps> = ({
         fetchCalendars();
         // Seleziona automaticamente il nuovo calendario
         if (response.data.calendarId) {
-          onCalendarSelect(response.data.calendarId);
+          // Aggiungi il nuovo calendario alla selezione
+          const newSelectedIds = [...selectedIds, response.data.calendarId];
+          setSelectedIds(newSelectedIds);
+          
+          // Chiama entrambi i callback per retrocompatibilità
+          if (onCalendarSelect) {
+            onCalendarSelect(response.data.calendarId);
+          }
+          
+          if (onCalendarsSelect) {
+            onCalendarsSelect(newSelectedIds);
+          }
+          
+          // Salva la selezione sul server
+          await axios.post(`${API_BASE_URL}/google-calendar/select-calendars`, { calendarIds: newSelectedIds });
         }
         // Chiudi il dialog dopo un breve ritardo
         setTimeout(() => {
@@ -152,12 +200,12 @@ const GoogleCalendarSelector: React.FC<GoogleCalendarSelectorProps> = ({
     <Box sx={{ mb: 3 }}>
       <Paper sx={{ p: 3, bgcolor: '#f9f9f9' }}>
         <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-          Seleziona Calendario
+          Seleziona Calendari
         </Typography>
         
         <Typography variant="body2" paragraph>
-          Seleziona il calendario Google da utilizzare per la sincronizzazione degli appuntamenti.
-          Puoi anche creare un nuovo calendario dedicato per SlabsLink.
+          Seleziona i calendari Google da utilizzare per la sincronizzazione degli appuntamenti.
+          Puoi selezionare più calendari spuntando le caselle corrispondenti.
         </Typography>
 
         {error && (
@@ -166,39 +214,60 @@ const GoogleCalendarSelector: React.FC<GoogleCalendarSelectorProps> = ({
           </Alert>
         )}
 
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <FormControl fullWidth disabled={disabled || loading}>
-            <InputLabel id="calendar-select-label">Calendario</InputLabel>
-            <Select
-              labelId="calendar-select-label"
-              value={selectedCalendarId || ''}
-              onChange={handleCalendarChange}
-              label="Calendario"
-            >
-              <MenuItem value="primary">Calendario principale</MenuItem>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+            <Typography variant="subtitle2">
+              Calendari disponibili:
+            </Typography>
+            
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button
+                variant="outlined"
+                onClick={handleOpenCreateDialog}
+                disabled={disabled || loading}
+                size="small"
+              >
+                Nuovo Calendario
+              </Button>
+
+              <Button
+                variant="outlined"
+                onClick={fetchCalendars}
+                disabled={disabled || loading}
+                size="small"
+                startIcon={loading ? <CircularProgress size={16} /> : <RefreshIcon />}
+              >
+                Aggiorna
+              </Button>
+            </Box>
+          </Box>
+          
+          <FormControl component="fieldset" disabled={disabled || loading}>
+            <FormGroup>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={selectedIds.includes('primary')}
+                    onChange={() => handleCalendarToggle('primary')}
+                  />
+                }
+                label="Calendario principale"
+              />
+              
               {calendars.map((calendar) => (
-                <MenuItem key={calendar.id} value={calendar.id}>
-                  {calendar.summary}
-                </MenuItem>
+                <FormControlLabel
+                  key={calendar.id}
+                  control={
+                    <Checkbox
+                      checked={selectedIds.includes(calendar.id)}
+                      onChange={() => handleCalendarToggle(calendar.id)}
+                    />
+                  }
+                  label={calendar.summary}
+                />
               ))}
-            </Select>
+            </FormGroup>
           </FormControl>
-
-          <Button
-            variant="outlined"
-            onClick={handleOpenCreateDialog}
-            disabled={disabled || loading}
-          >
-            Nuovo Calendario
-          </Button>
-
-          <Button
-            variant="outlined"
-            onClick={fetchCalendars}
-            disabled={disabled || loading}
-          >
-            {loading ? <CircularProgress size={24} /> : 'Aggiorna'}
-          </Button>
         </Box>
       </Paper>
 

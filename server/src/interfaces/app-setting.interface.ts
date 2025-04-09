@@ -21,24 +21,9 @@ export interface CalendarSettings {
   channelId?: string;
   resourceId?: string;
   expiration?: string | number;
-  selectedCalendarId?: string;
+  selectedCalendarId?: string; // Mantenuto per retrocompatibilità
+  selectedCalendarIds?: string[]; // Nuovo campo per supportare selezione multipla
   availableCalendars?: Array<{id: string, summary: string}>;
-  workingHours?: {
-    mondayStart: string;
-    mondayEnd: string;
-    tuesdayStart: string;
-    tuesdayEnd: string;
-    wednesdayStart: string;
-    wednesdayEnd: string;
-    thursdayStart: string;
-    thursdayEnd: string;
-    fridayStart: string;
-    fridayEnd: string;
-    saturdayStart: string;
-    saturdayEnd: string;
-    sundayStart: string;
-    sundayEnd: string;
-  };
   lastSyncFromGoogle?: string;
   lastSyncStats?: {
     importati: number;
@@ -46,4 +31,4 @@ export interface CalendarSettings {
     saltati: number;
     totale: number;
   };
-}
+};
