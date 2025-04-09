@@ -31,37 +31,58 @@ export class GoogleCalendarService {
    * @param data - Dati aggiuntivi opzionali
    */
   protected log(level: 'info' | 'warn' | 'error', message: string, data?: any): void {
-    const timestamp = new Date().toISOString();
-    const prefix = `[GoogleCalendarService][${timestamp}][${level.toUpperCase()}]`;
+    // Riduci i log per facilitare il debug, mostra solo errori e avvisi importanti
+    // o log specifici relativi all'autenticazione e ai token
+    const isAuthRelated = message.includes('token') || 
+                          message.includes('autenticazione') || 
+                          message.includes('auth') || 
+                          message.includes('OAuth');
     
-    // Formatta i dati per una migliore leggibilità se sono un oggetto
-    let formattedData = data;
-    if (data && typeof data === 'object') {
-      try {
-        // Rimuovi proprietà troppo verbose o circolari
-        const sanitizedData = { ...data };
-        if (sanitizedData.tokens) sanitizedData.tokens = '[REDACTED]';
-        formattedData = sanitizedData;
-      } catch (e) {
-        formattedData = 'Impossibile formattare i dati';
-      }
-    }
+    // Filtra i log relativi alle query di database
+    const isDatabaseQuery = message.includes('SELECT') || 
+                           message.includes('INSERT') ||  
+                           message.includes('DELETE') || 
+                           message.includes('tabella') || 
+                           message.includes('database') || 
+                           message.toLowerCase().includes('db');
     
-    if (formattedData) {
-      if (level === 'error') {
-        console.error(`${prefix} ${message}`, formattedData);
-      } else if (level === 'warn') {
-        console.warn(`${prefix} ${message}`, formattedData);
-      } else {
-        console.log(`${prefix} ${message}`, formattedData);
+    // Mostra sempre errori e avvisi, ma filtra i log info a meno che non siano relativi all'autenticazione
+    // e filtra anche i log relativi alle query di database a meno che non siano errori
+    if ((level === 'error') || 
+        (level === 'warn' && !isDatabaseQuery) || 
+        (level === 'info' && isAuthRelated && !isDatabaseQuery)) {
+      const timestamp = new Date().toISOString();
+      const prefix = `[GoogleCalendarService][${timestamp}][${level.toUpperCase()}]`;
+      
+      // Formatta i dati per una migliore leggibilità se sono un oggetto
+      let formattedData = data;
+      if (data && typeof data === 'object') {
+        try {
+          // Rimuovi proprietà troppo verbose o circolari
+          const sanitizedData = { ...data };
+          if (sanitizedData.tokens) sanitizedData.tokens = '[REDACTED]';
+          formattedData = sanitizedData;
+        } catch (e) {
+          formattedData = 'Impossibile formattare i dati';
+        }
       }
-    } else {
-      if (level === 'error') {
-        console.error(`${prefix} ${message}`);
-      } else if (level === 'warn') {
-        console.warn(`${prefix} ${message}`);
+      
+      if (formattedData) {
+        if (level === 'error') {
+          console.error(`${prefix} ${message}`, formattedData);
+        } else if (level === 'warn') {
+          console.warn(`${prefix} ${message}`, formattedData);
+        } else {
+          console.log(`${prefix} ${message}`, formattedData);
+        }
       } else {
-        console.log(`${prefix} ${message}`);
+        if (level === 'error') {
+          console.error(`${prefix} ${message}`);
+        } else if (level === 'warn') {
+          console.warn(`${prefix} ${message}`);
+        } else {
+          console.log(`${prefix} ${message}`);
+        }
       }
     }
   }
@@ -69,7 +90,7 @@ export class GoogleCalendarService {
   /**
    * Recupera le impostazioni del calendario dal database
    */
-  protected async getCalendarSettings(): Promise<CalendarSettings | null> {
+  public async getCalendarSettings(): Promise<CalendarSettings | null> {
     try {
       this.log('info', 'Recupero delle impostazioni del calendario dal database');
       this.db = getDatabase();
@@ -162,6 +183,8 @@ export class GoogleCalendarService {
       this.log('info', 'Impostazioni del calendario recuperate', {
         hasSettings: !!settings,
         hasTokens: !!settings?.tokens,
+        hasAccessToken: !!settings?.tokens?.access_token,
+        hasRefreshToken: !!settings?.tokens?.refresh_token,
         googleCalendarEnabled: settings?.googleCalendarEnabled
       });
       
@@ -217,45 +240,128 @@ export class GoogleCalendarService {
                 refresh_token: settings.tokens.refresh_token
               });
               
-              // Richiedi un nuovo token di accesso
-              const { credentials } = await this.oauth2Client.refreshAccessToken();
-              this.log('info', 'Token di accesso rinnovato con successo', {
-                hasNewAccessToken: !!credentials.access_token,
-                hasNewRefreshToken: !!credentials.refresh_token,
-                newExpiryDate: credentials.expiry_date ? new Date(credentials.expiry_date).toISOString() : 'N/A'
-              });
-              
-              // Aggiorna i token nelle impostazioni
-              // Assicuriamoci che credentials.access_token sia definito
-              if (credentials.access_token) {
-                settings.tokens = {
-                  access_token: credentials.access_token,
-                  refresh_token: credentials.refresh_token || undefined,
-                  expiry_date: credentials.expiry_date || undefined,
-                  token_type: credentials.token_type || undefined,
-                  id_token: credentials.id_token || undefined,
-                  scope: credentials.scope || undefined
-                };
-              } else {
-                this.log('error', 'Token di accesso mancante nelle credenziali rinnovate');
+              try {
+                // Richiedi un nuovo token di accesso
+                this.log('info', 'Tentativo di rinnovo del token di accesso con refresh token');
+                const { credentials } = await this.oauth2Client.refreshAccessToken();
+                this.log('info', 'Token di accesso rinnovato con successo', {
+                  hasNewAccessToken: !!credentials.access_token,
+                  hasNewRefreshToken: !!credentials.refresh_token,
+                  newExpiryDate: credentials.expiry_date ? new Date(credentials.expiry_date).toISOString() : 'N/A'
+                });
+                
+                // Log dettagliato delle credenziali ricevute (senza esporre dati sensibili)
+                this.log('info', 'Dettagli delle credenziali rinnovate', {
+                  accessTokenLength: credentials.access_token ? credentials.access_token.length : 0,
+                  refreshTokenPresent: !!credentials.refresh_token,
+                  refreshTokenLength: credentials.refresh_token ? credentials.refresh_token.length : 0,
+                  expiryDate: credentials.expiry_date ? new Date(credentials.expiry_date).toISOString() : 'N/A',
+                  tokenType: credentials.token_type || 'non specificato',
+                  scope: credentials.scope || 'non specificato'
+                });
+                
+                // Aggiorna i token nelle impostazioni
+                // Assicuriamoci che credentials.access_token sia definito
+                if (credentials.access_token) {
+                  settings.tokens = {
+                    access_token: credentials.access_token,
+                    // Preserva il refresh token esistente se non ne è stato fornito uno nuovo
+                    refresh_token: credentials.refresh_token || settings.tokens.refresh_token,
+                    expiry_date: credentials.expiry_date || undefined,
+                    token_type: credentials.token_type || undefined,
+                    id_token: credentials.id_token || undefined,
+                    scope: credentials.scope || undefined
+                  };
+                } else {
+                  this.log('error', 'Token di accesso mancante nelle credenziali rinnovate');
+                  return false;
+                }
+                
+                // Salva i nuovi token nel database
+                this.db = getDatabase();
+                if (this.db) {
+                  const jsonSettings = JSON.stringify(settings);
+                  const updateResult = this.db.prepare('UPDATE app_settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?')
+                    .run(jsonSettings, 'calendar');
+                  
+                  this.log('info', 'Token rinnovati salvati nel database', {
+                    changes: updateResult.changes
+                  });
+                  
+                  // Verifica che i token siano stati effettivamente salvati
+                  const verifySettings = this.db.prepare('SELECT * FROM app_settings WHERE key = ?').get('calendar') as AppSetting | undefined;
+                  if (verifySettings) {
+                    try {
+                      const verifiedSettings = JSON.parse(verifySettings.value);
+                      this.log('info', 'Verifica dei token rinnovati salvati', {
+                        hasAccessToken: !!verifiedSettings.tokens?.access_token,
+                        hasRefreshToken: !!verifiedSettings.tokens?.refresh_token,
+                        tokenType: verifiedSettings.tokens?.token_type,
+                        expiryDate: verifiedSettings.tokens?.expiry_date ? new Date(verifiedSettings.tokens.expiry_date).toISOString() : 'N/A'
+                      });
+                    } catch (parseError) {
+                      this.log('error', 'Errore nel parsing delle impostazioni durante la verifica dopo il rinnovo', parseError);
+                    }
+                  }
+                } else {
+                  this.log('error', 'Impossibile salvare i token rinnovati: database non disponibile');
+                }
+              } catch (refreshTokenError) {
+                // Gestione specifica dell'errore di refresh token
+                this.log('error', 'Errore durante il rinnovo del token', refreshTokenError);
+                
+                // Log dettagliato dell'errore per facilitare il debug
+                if (refreshTokenError instanceof Error) {
+                  this.log('error', `Dettaglio errore refresh token: ${refreshTokenError.message}`, {
+                    errorName: refreshTokenError.name,
+                    errorStack: refreshTokenError.stack?.substring(0, 500) // Limita la lunghezza dello stack
+                  });
+                }
+                
+                // Se il refresh token è stato revocato o è scaduto, dobbiamo richiedere una nuova autenticazione
+                if (refreshTokenError instanceof Error && 
+                    (refreshTokenError.message.includes('invalid_grant') || 
+                     refreshTokenError.message.includes('Token has been expired or revoked'))) {
+                  this.log('warn', 'Il refresh token è stato revocato o è scaduto, è necessaria una nuova autenticazione');
+                  
+                  // Aggiorna le impostazioni per indicare che è necessaria una nuova autenticazione
+                  settings.tokens = undefined;
+                  
+                  // Salva le impostazioni aggiornate nel database
+                  this.db = getDatabase();
+                  if (this.db) {
+                    const jsonSettings = JSON.stringify(settings);
+                    try {
+                      const updateResult = this.db.prepare('UPDATE app_settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?')
+                        .run(jsonSettings, 'calendar');
+                      
+                      this.log('info', 'Impostazioni aggiornate per richiedere una nuova autenticazione', {
+                        changes: updateResult.changes
+                      });
+                      
+                      // Verifica che le impostazioni siano state effettivamente aggiornate
+                      const checkSettings = this.db.prepare('SELECT * FROM app_settings WHERE key = ?').get('calendar') as AppSetting | undefined;
+                      if (checkSettings) {
+                        try {
+                          const parsedSettings = JSON.parse(checkSettings.value);
+                          this.log('info', 'Verifica delle impostazioni dopo la rimozione dei token', {
+                            hasTokens: !!parsedSettings.tokens,
+                            googleCalendarEnabled: parsedSettings.googleCalendarEnabled
+                          });
+                        } catch (parseError) {
+                          this.log('error', 'Errore nel parsing delle impostazioni durante la verifica dopo la rimozione dei token', parseError);
+                        }
+                      }
+                    } catch (dbError) {
+                      this.log('error', 'Errore durante l\'aggiornamento delle impostazioni', dbError);
+                    }
+                  }
+                }
+                
                 return false;
               }
-              
-              // Salva i nuovi token nel database
-              this.db = getDatabase();
-              if (this.db) {
-                const jsonSettings = JSON.stringify(settings);
-                const updateResult = this.db.prepare('UPDATE app_settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?')
-                  .run(jsonSettings, 'calendar');
-                
-                this.log('info', 'Token rinnovati salvati nel database', {
-                  changes: updateResult.changes
-                });
-              } else {
-                this.log('error', 'Impossibile salvare i token rinnovati: database non disponibile');
-              }
-            } catch (refreshError) {
-              this.log('error', 'Errore durante il rinnovo del token', refreshError);
+            } catch (configError) {
+              this.log('error', 'Errore durante la configurazione per il rinnovo del token', configError);
               return false;
             }
           } else {
@@ -316,9 +422,35 @@ export class GoogleCalendarService {
         if (apiError instanceof Error) {
           const errorMessage = apiError.message;
           
+          // Log dettagliato dell'errore per facilitare il debug
+          this.log('error', `Dettaglio errore API: ${errorMessage}`, {
+            errorName: apiError.name,
+            errorStack: apiError.stack?.substring(0, 500), // Limita la lunghezza dello stack
+            errorObject: JSON.stringify(apiError).substring(0, 1000) // Converti l'oggetto errore in stringa per il log
+          });
+          
           // Gestione specifica dei diversi tipi di errori
           if (errorMessage.includes('invalid_grant')) {
             this.log('warn', 'Token non validi o scaduti, potrebbe essere necessario riautenticare');
+            
+            // Aggiorna le impostazioni per indicare che è necessaria una nuova autenticazione
+            settings.tokens = undefined;
+            
+            // Salva le impostazioni aggiornate nel database
+            this.db = getDatabase();
+            if (this.db) {
+              const jsonSettings = JSON.stringify(settings);
+              try {
+                const updateResult = this.db.prepare('UPDATE app_settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?')
+                  .run(jsonSettings, 'calendar');
+                
+                this.log('info', 'Impostazioni aggiornate per richiedere una nuova autenticazione dopo errore API', {
+                  changes: updateResult.changes
+                });
+              } catch (dbError) {
+                this.log('error', 'Errore durante l\'aggiornamento delle impostazioni dopo errore API', dbError);
+              }
+            }
           } else if (errorMessage.includes('invalid_token')) {
             this.log('warn', 'Token non valido, potrebbe essere necessario riautenticare');
           } else if (errorMessage.includes('unauthorized_client')) {
@@ -437,35 +569,137 @@ export class GoogleCalendarService {
   /**
    * Imposta il codice di autorizzazione e ottiene i token
    */
-  async setAuthCode(code: string): Promise<void> {
-    this.log('info', 'Impostazione del codice di autorizzazione');
+  /**
+   * Elimina i token di autenticazione precedenti dal database
+   * Questo metodo è utile quando si verificano problemi di autenticazione
+   * e si desidera ripartire da zero con nuovi token
+   */
+  async clearAuthTokens(): Promise<void> {
+    this.log('info', 'Eliminazione dei token di autenticazione precedenti');
     
     try {
-      if (!this.oauth2Client) {
-        this.log('info', 'Client OAuth2 non inizializzato, tentativo di configurazione');
-        await this.configure();
+      this.db = getDatabase();
+      
+      if (!this.db) {
+        this.log('error', 'Database non disponibile');
+        throw new Error('Database non disponibile');
       }
+      
+      // Verifica se la tabella app_settings esiste
+      const tableExists = this.db.prepare(
+        `SELECT name FROM sqlite_master WHERE type='table' AND name='app_settings'`
+      ).get();
+      
+      if (!tableExists) {
+        this.log('warn', 'Tabella app_settings non trovata nel database');
+        return;
+      }
+      
+      const setting = this.db.prepare(
+        'SELECT * FROM app_settings WHERE key = ?'
+      ).get('calendar') as AppSetting | undefined;
+      
+      if (!setting) {
+        this.log('warn', 'Impostazioni di Google Calendar non trovate nel database');
+        return;
+      }
+      
+      // Verifica che il valore delle impostazioni sia valido
+      if (!setting.value) {
+        this.log('warn', 'Valore delle impostazioni vuoto o non valido');
+        return;
+      }
+      
+      let calendarSettings;
+      try {
+        calendarSettings = JSON.parse(setting.value);
+      } catch (parseError) {
+        this.log('error', 'Errore nel parsing delle impostazioni', parseError);
+        return;
+      }
+      
+      // Rimuovi i token ma mantieni le altre impostazioni
+      if (calendarSettings.tokens) {
+        this.log('info', 'Rimozione dei token precedenti dalle impostazioni');
+        delete calendarSettings.tokens;
+        
+        // Prepara il JSON per il salvataggio
+        const jsonSettings = JSON.stringify(calendarSettings);
+        
+        // Aggiorna le impostazioni nel database
+        const updateQuery = 'UPDATE app_settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?';
+        const result = this.db.prepare(updateQuery).run(jsonSettings, 'calendar');
+        
+        this.log('info', 'Token precedenti rimossi dal database', { 
+          changes: result.changes,
+          lastInsertRowid: result.lastInsertRowid
+        });
+      } else {
+        this.log('info', 'Nessun token trovato nelle impostazioni, nessuna azione necessaria');
+      }
+    } catch (error) {
+      this.log('error', 'Errore durante l\'eliminazione dei token precedenti', error);
+      throw error;
+    }
+  }
+  
+  async setAuthCode(code: string): Promise<void> {
+    this.log('info', 'Impostazione del codice di autorizzazione');
+    console.log('[DEBUG-CALENDAR] Inizio processo setAuthCode con codice:', code.substring(0, 10) + '...');
+    
+    try {
+      // Elimina i token precedenti per evitare conflitti
+      this.log('info', 'Eliminazione dei token precedenti prima di procedere con la nuova autenticazione');
+      await this.clearAuthTokens();
+      
+      // Ricrea sempre un nuovo client OAuth2 per evitare problemi con token precedenti
+      this.log('info', 'Creazione di un nuovo client OAuth2 per l\'autenticazione');
+      await this.configure();
       
       if (!this.oauth2Client) {
         this.log('error', 'Google Calendar service non configurato dopo il tentativo di configurazione');
+        console.error('[DEBUG-CALENDAR] oauth2Client non disponibile dopo configure()');
         throw new Error('Google Calendar service non configurato');
       }
 
       // Verifica che il codice non sia vuoto o malformato
       if (!code || typeof code !== 'string' || code.trim() === '') {
         this.log('error', 'Codice di autorizzazione invalido o vuoto');
+        console.error('[DEBUG-CALENDAR] Codice di autorizzazione invalido:', code);
         throw new Error('Codice di autorizzazione invalido');
       }
 
       this.log('info', `Scambio del codice di autorizzazione: ${code.substring(0, 10)}...`);
+      console.log('[DEBUG-CALENDAR] Tentativo di scambio codice con getToken');
+      
+      // Modifica: Aggiungi il parametro prompt=consent per forzare Google a richiedere un nuovo refresh token
+      // Questo è necessario quando il refresh token precedente è stato revocato o è scaduto
+      this.oauth2Client.generateAuthUrl({
+        access_type: 'offline',
+        scope: ['https://www.googleapis.com/auth/calendar'],
+        prompt: 'consent' // Forza Google a mostrare la schermata di consenso e fornire un nuovo refresh token
+      });
       
       // Ottieni i token usando il codice di autorizzazione
       const { tokens } = await this.oauth2Client.getToken(code);
+      console.log('[DEBUG-CALENDAR] Token ottenuti da Google:', {
+        hasAccessToken: !!tokens.access_token,
+        accessTokenLength: tokens.access_token?.length || 0,
+        hasRefreshToken: !!tokens.refresh_token,
+        refreshTokenLength: tokens.refresh_token?.length || 0,
+        expiryDate: tokens.expiry_date ? new Date(tokens.expiry_date).toISOString() : 'N/A'
+      });
       
       // Verifica che i token siano stati ottenuti correttamente
       if (!tokens || !tokens.access_token) {
         this.log('error', 'Token OAuth2 non ottenuti o incompleti');
+        console.error('[DEBUG-CALENDAR] Token OAuth2 mancanti o incompleti');
         throw new Error('Token OAuth2 non ottenuti correttamente');
+      }
+      
+      // Verifica che il refresh token sia presente
+      if (!tokens.refresh_token) {
+        this.log('warn', 'Refresh token non presente nella risposta. Questo potrebbe causare problemi di autenticazione in futuro. Potrebbe essere necessario creare nuove credenziali OAuth2 in Google Cloud Console.');
       }
       
       this.log('info', 'Token OAuth2 ottenuti con successo', { 
@@ -503,6 +737,15 @@ export class GoogleCalendarService {
         this.log('info', 'Richiesta di test completata con successo, token validi');
       } catch (apiError) {
         this.log('error', 'Errore durante la verifica dei token con richiesta di test', apiError);
+        
+        // Analisi dettagliata dell'errore per fornire informazioni più precise
+        if (apiError instanceof Error) {
+          const errorMessage = apiError.message;
+          if (errorMessage.includes('invalid_grant') || errorMessage.includes('Token has been expired or revoked')) {
+            this.log('warn', 'Il token fornito non è valido o è stato revocato. Sarà necessaria una nuova autenticazione.');
+          }
+        }
+        
         throw new Error(`Token non validi: ${apiError instanceof Error ? apiError.message : 'Errore sconosciuto'}`);
       }
       
@@ -513,6 +756,23 @@ export class GoogleCalendarService {
       if (!this.db) {
         this.log('error', 'Database non disponibile');
         throw new Error('Database non disponibile');
+      }
+      
+      // Verifica lo stato attuale del database
+      try {
+        const dbInfo = this.db.pragma('integrity_check');
+        
+        // Verifica se la chiave calendar esiste già
+        const existingRecord = this.db.prepare('SELECT * FROM app_settings WHERE key = ?').get('calendar') as AppSetting | undefined;
+        this.log('info', 'Verifica record calendar esistente', {
+          exists: !!existingRecord,
+          hasValue: existingRecord ? !!existingRecord.value : false,
+          valueLength: existingRecord && existingRecord.value ? existingRecord.value.length : 0,
+          updatedAt: existingRecord ? existingRecord.updated_at : null
+        });
+      } catch (dbCheckError) {
+        this.log('error', 'Errore durante la verifica del database', dbCheckError);
+        // Non interrompiamo il flusso principale
       }
       
       // Verifica se la tabella app_settings esiste
@@ -557,14 +817,17 @@ export class GoogleCalendarService {
         hadTokens: !!calendarSettings.tokens
       });
       
-      // Salva i token nelle impostazioni
-      calendarSettings.tokens = tokens;
+      // Salva i token nelle impostazioni, assicurandosi di preservare il refresh_token se non è presente nei nuovi token
+      if (!tokens.refresh_token && calendarSettings.tokens?.refresh_token) {
+        this.log('info', 'Preservazione del refresh token esistente poiché non presente nei nuovi token');
+        tokens.refresh_token = calendarSettings.tokens.refresh_token;
+      }
       
       // Assicurati che googleCalendarEnabled sia impostato a true
       calendarSettings.googleCalendarEnabled = true;
       
       // Log dettagliato dei token prima del salvataggio (senza esporre dati sensibili)
-      this.log('info', 'Token da salvare nel database', {
+      this.log('info', '[GOOGLE CALENDAR]Token da salvare nel database', {
         hasAccessToken: !!tokens.access_token,
         accessTokenLength: tokens.access_token ? tokens.access_token.length : 0,
         hasRefreshToken: !!tokens.refresh_token,
@@ -573,25 +836,274 @@ export class GoogleCalendarService {
         expiryDate: tokens.expiry_date ? new Date(tokens.expiry_date).toISOString() : 'N/A'
       });
       
-      // Prepara il JSON per il salvataggio
-      const jsonSettings = JSON.stringify(calendarSettings);
-      this.log('info', `JSON delle impostazioni generato, lunghezza: ${jsonSettings.length} caratteri`);
+      // Verifica che i token siano presenti e validi prima di salvarli
+      if (!tokens || !tokens.access_token) {
+        this.log('error', 'Token non validi o mancanti prima del salvataggio');
+        throw new Error('Token non validi o mancanti prima del salvataggio');
+      }
       
-      // Salva direttamente senza transazione per semplificare
-      const updateQuery = 'UPDATE app_settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?';
-      const updateParams = [jsonSettings, 'calendar'];
-      this.log('info', `Esecuzione query di aggiornamento: ${updateQuery}`);
+      // Non cerchiamo più la chiave 'google' poiché tutte le impostazioni sono salvate con la chiave 'calendar'
       
-      const result = this.db.prepare(updateQuery).run(jsonSettings, 'calendar');
-      this.log('info', 'Token salvati nel database', { 
-        changes: result.changes,
-        lastInsertRowid: result.lastInsertRowid
+      // Aggiungi log per debug
+      this.log('info', 'Contenuto dei token ricevuti da Google', {
+        accessTokenPresent: !!tokens.access_token,
+        accessTokenLength: tokens.access_token?.length || 0,
+        refreshTokenPresent: !!tokens.refresh_token,
+        refreshTokenLength: tokens.refresh_token?.length || 0,
+        expiryDatePresent: !!tokens.expiry_date,
+        expiryDateValue: tokens.expiry_date ? new Date(tokens.expiry_date).toISOString() : 'N/A'
       });
       
-      // Verifica che l'aggiornamento sia stato effettivo
-      if (result.changes === 0) {
-        this.log('warn', 'Nessuna riga aggiornata nel database');
-        throw new Error('Nessuna riga aggiornata nel database');
+      // Assicurati che i token siano correttamente assegnati all'oggetto calendarSettings
+      // Verifica che calendarSettings sia un oggetto valido
+      if (typeof calendarSettings !== 'object' || calendarSettings === null) {
+        calendarSettings = {
+          googleCalendarEnabled: true,
+          clientId: calendarSettings?.clientId || '',
+          clientSecret: calendarSettings?.clientSecret || '',
+          redirectUri: calendarSettings?.redirectUri || ''
+        };
+      }
+      
+      // Assicurati che i token siano correttamente formattati e assegnati direttamente all'oggetto calendarSettings
+      // Questo è un punto critico: assicuriamoci che i token vengano correttamente assegnati
+      // Creiamo un nuovo oggetto per evitare riferimenti circolari o problemi di serializzazione
+      const tokenObject = {
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token || (calendarSettings.tokens && calendarSettings.tokens.refresh_token),
+        expiry_date: tokens.expiry_date,
+        token_type: tokens.token_type || 'Bearer',
+        id_token: tokens.id_token,
+        scope: tokens.scope
+      };
+      
+      // Assegna esplicitamente i token all'oggetto calendarSettings
+      calendarSettings.tokens = tokenObject;
+      
+      // Assicurati che googleCalendarEnabled sia impostato a true
+      calendarSettings.googleCalendarEnabled = true;
+      
+      // Rimuovi gli orari lavorativi non necessari
+      if (calendarSettings.workingHours) {
+        this.log('info', 'Rimozione degli orari lavorativi non necessari');
+        delete calendarSettings.workingHours;
+      }
+      
+      // Assicurati che l'oggetto non contenga riferimenti circolari
+      // Crea una copia pulita dell'oggetto per la serializzazione
+      const cleanCalendarSettings = {
+        googleCalendarEnabled: calendarSettings.googleCalendarEnabled,
+        clientId: calendarSettings.clientId,
+        clientSecret: calendarSettings.clientSecret,
+        redirectUri: calendarSettings.redirectUri,
+        tokens: calendarSettings.tokens,
+        selectedCalendarId: calendarSettings.selectedCalendarId,
+        availableCalendars: calendarSettings.availableCalendars,
+        channelId: calendarSettings.channelId,
+        resourceId: calendarSettings.resourceId,
+        expiration: calendarSettings.expiration,
+        lastSyncFromGoogle: calendarSettings.lastSyncFromGoogle,
+        lastSyncStats: calendarSettings.lastSyncStats
+      };
+      
+      // Sostituisci l'oggetto originale con la versione pulita
+      calendarSettings = cleanCalendarSettings;
+      
+      // Log aggiuntivo per verificare che i token siano stati correttamente assegnati
+      this.log('info', 'Token assegnati all\'oggetto calendarSettings', {
+        hasTokens: !!calendarSettings.tokens,
+        hasAccessToken: !!calendarSettings.tokens?.access_token,
+        accessTokenLength: calendarSettings.tokens?.access_token?.length || 0,
+        hasRefreshToken: !!calendarSettings.tokens?.refresh_token,
+        refreshTokenLength: calendarSettings.tokens?.refresh_token?.length || 0
+      });
+      
+      // Log dettagliato dell'oggetto calendarSettings prima della serializzazione
+      this.log('info', 'Struttura calendarSettings prima della serializzazione', {
+        googleCalendarEnabled: calendarSettings.googleCalendarEnabled,
+        hasClientId: !!calendarSettings.clientId,
+        hasClientSecret: !!calendarSettings.clientSecret,
+        hasRedirectUri: !!calendarSettings.redirectUri,
+        hasTokens: !!calendarSettings.tokens,
+        hasAccessToken: !!calendarSettings.tokens?.access_token,
+        accessTokenLength: calendarSettings.tokens?.access_token?.length || 0,
+        hasRefreshToken: !!calendarSettings.tokens?.refresh_token,
+        refreshTokenLength: calendarSettings.tokens?.refresh_token?.length || 0
+      });
+      
+      // Prepara il JSON per il salvataggio
+      // Verifica finale che i token siano correttamente impostati
+      if (!calendarSettings.tokens || !calendarSettings.tokens.access_token) {
+        this.log('warn', 'Token mancanti prima della serializzazione, tentativo di correzione');
+        // Creiamo un nuovo oggetto per evitare riferimenti circolari
+        const tokenObjectFallback = {
+          access_token: tokens.access_token,
+          refresh_token: tokens.refresh_token || (calendarSettings.tokens && calendarSettings.tokens.refresh_token),
+          expiry_date: tokens.expiry_date,
+          token_type: tokens.token_type || 'Bearer',
+          id_token: tokens.id_token,
+          scope: tokens.scope
+        };
+        // Assegna esplicitamente i token
+        calendarSettings.tokens = tokenObjectFallback;
+        this.log('info', 'Token di fallback creati', {
+          hasAccessToken: !!tokenObjectFallback.access_token,
+          hasRefreshToken: !!tokenObjectFallback.refresh_token
+        });
+      }
+      
+      // Serializza l'oggetto in JSON
+      const jsonSettings = JSON.stringify(calendarSettings);
+      this.log('info', `JSON delle impostazioni generato, lunghezza: ${jsonSettings?.length || 0} caratteri`);
+      
+      // Verifica che il JSON contenga i token
+      if (!jsonSettings.includes('"tokens"') || !jsonSettings.includes('"access_token"')) {
+        this.log('error', 'I token non sono presenti nel JSON generato');
+        throw new Error('I token non sono presenti nel JSON generato');
+      }
+      
+      // Log del JSON completo per debug (limitato per sicurezza)
+      this.log('info', `JSON da salvare (primi 100 caratteri): ${jsonSettings.substring(0, 100)}...`);
+      
+      // Verifica che il database sia ancora connesso
+      if (!this.db) {
+        this.log('error', 'Connessione al database persa prima della transazione');
+        this.db = getDatabase();
+        if (!this.db) {
+          throw new Error('Impossibile riconnettere al database');
+        }
+        this.log('info', 'Riconnessione al database effettuata con successo');
+      }
+      
+      // Verifica che la tabella esista ancora
+      const tableCheck = this.db.prepare(
+        `SELECT name FROM sqlite_master WHERE type='table' AND name='app_settings'`
+      ).get();
+      
+      if (!tableCheck) {
+        this.log('error', 'Tabella app_settings non trovata prima della transazione');
+        throw new Error('Tabella app_settings non trovata');
+      }
+      
+      try {
+        // Utilizziamo un approccio più diretto per il salvataggio dei token
+        this.log('info', 'Salvataggio dei token nel database');
+        
+        // Verifica aggiuntiva che i token siano presenti nel JSON
+        const parsedJson = JSON.parse(jsonSettings);
+        if (!parsedJson.tokens || !parsedJson.tokens.access_token) {
+          this.log('error', 'I token non sono presenti nel JSON dopo la serializzazione');
+          throw new Error('I token non sono presenti nel JSON dopo la serializzazione');
+        }
+        
+        // Log del JSON completo per debug (limitato per sicurezza)
+        this.log('info', `JSON da salvare (primi 100 caratteri): ${jsonSettings.substring(0, 100)}...`);
+        console.log('[DEBUG-CALENDAR] Salvataggio token - JSON generato:', jsonSettings.substring(0, 200) + '...');
+        
+        // Verifica che il database sia ancora connesso
+        if (!this.db) {
+          this.log('error', 'Connessione al database persa prima del salvataggio');
+          this.db = getDatabase();
+          if (!this.db) {
+            throw new Error('Impossibile riconnettere al database');
+          }
+          this.log('info', 'Riconnessione al database effettuata con successo');
+        }
+        
+        // Verifica che la tabella esista ancora
+        const tableCheck = this.db.prepare(
+          `SELECT name FROM sqlite_master WHERE type='table' AND name='app_settings'`
+        ).get();
+        
+        if (!tableCheck) {
+          this.log('error', 'Tabella app_settings non trovata');
+          throw new Error('Tabella app_settings non trovata');
+        }
+        
+        // Utilizziamo un approccio diretto senza transazione esplicita
+        // Questo può risolvere problemi di lock del database
+        
+        // Prepara la query di aggiornamento
+        const stmt = this.db.prepare('UPDATE app_settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?');
+        console.log('[DEBUG-CALENDAR] Esecuzione query di aggiornamento diretta');
+        
+        // Esegui la query direttamente
+        const result = stmt.run(jsonSettings, 'calendar');
+        console.log('[DEBUG-CALENDAR] Risultato query di aggiornamento:', { changes: result.changes });
+        
+        // Verifica che l'aggiornamento sia stato effettivo
+        if (result.changes === 0) {
+          this.log('warn', 'Nessuna riga aggiornata nel database');
+          console.log('[DEBUG-CALENDAR] Nessuna riga aggiornata, verifica esistenza record');
+          
+          // Verifica se il record esiste
+          const recordExists = this.db.prepare('SELECT COUNT(*) as count FROM app_settings WHERE key = ?')
+            .get('calendar') as { count: number };
+          
+          if (recordExists && recordExists.count === 0) {
+            // Il record non esiste, dobbiamo inserirlo
+            this.log('info', 'Record non trovato, tentativo di inserimento');
+            console.log('[DEBUG-CALENDAR] Record non trovato, esecuzione inserimento');
+            
+            const insertStmt = this.db.prepare(
+              'INSERT INTO app_settings (key, value, created_at, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)'
+            );
+            
+            const insertResult = insertStmt.run('calendar', jsonSettings);
+            console.log('[DEBUG-CALENDAR] Risultato inserimento:', { changes: insertResult.changes });
+            
+            if (insertResult.changes === 0) {
+              this.log('error', 'Inserimento fallito');
+              throw new Error('Impossibile inserire il record nel database');
+            }
+          } else {
+            // Il record esiste ma non è stato aggiornato, proviamo un approccio alternativo
+            this.log('warn', 'Record trovato ma non aggiornato, tentativo alternativo');
+            console.log('[DEBUG-CALENDAR] Tentativo alternativo di aggiornamento');
+            
+            // Prova a forzare l'aggiornamento con una query diretta
+            const forceUpdateStmt = this.db.prepare(
+              'UPDATE app_settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?'
+            );
+            
+            const forceResult = forceUpdateStmt.run(jsonSettings, 'calendar');
+            console.log('[DEBUG-CALENDAR] Risultato aggiornamento forzato:', { changes: forceResult.changes });
+            
+            if (forceResult.changes === 0) {
+              this.log('error', 'Aggiornamento forzato fallito');
+              throw new Error('Impossibile aggiornare il record nel database');
+            }
+          }
+        }
+        
+        // Verifica immediata dopo il salvataggio
+        const checkResult = this.db.prepare('SELECT * FROM app_settings WHERE key = ?').get('calendar') as AppSetting | undefined;
+        console.log('[DEBUG-CALENDAR] Verifica dopo salvataggio:', {
+          hasResult: !!checkResult,
+          valueLength: checkResult?.value?.length ?? 0,
+          containsTokens: checkResult?.value?.includes('"tokens"') || false,
+          containsAccessToken: checkResult?.value?.includes('"access_token"') || false
+        });
+        
+        // Verifica che i token siano stati effettivamente salvati
+        if (checkResult && checkResult.value) {
+          try {
+            const savedSettings = JSON.parse(checkResult.value);
+            console.log('[DEBUG-CALENDAR] Contenuto salvato verificato:', {
+              hasTokens: !!savedSettings.tokens,
+              hasAccessToken: !!savedSettings.tokens?.access_token,
+              accessTokenLength: savedSettings.tokens?.access_token?.length || 0,
+              hasRefreshToken: !!savedSettings.tokens?.refresh_token,
+              refreshTokenLength: savedSettings.tokens?.refresh_token?.length || 0
+            });
+          } catch (parseError) {
+            this.log('error', 'Errore nel parsing delle impostazioni salvate', parseError);
+          }
+        }
+      } catch (dbError) {
+        this.log('error', 'Errore durante il salvataggio dei token nel database', dbError);
+        console.error('[DEBUG-CALENDAR] Errore salvataggio token:', dbError);
+        throw new Error(`Errore durante il salvataggio dei token: ${dbError instanceof Error ? dbError.message : 'Errore sconosciuto'}`);
       }
       
       // Verifica che i token siano stati effettivamente salvati
@@ -605,6 +1117,8 @@ export class GoogleCalendarService {
       }
       
       try {
+        console.log('[DEBUG-CALENDAR] Verifica finale dei token salvati, valore grezzo:', verifySettings.value.substring(0, 200) + '...');
+        
         const verifiedCalendarSettings = JSON.parse(verifySettings.value);
         this.log('info', 'Verifica dei token salvati', {
           tokensPresent: !!verifiedCalendarSettings.tokens,
@@ -616,20 +1130,38 @@ export class GoogleCalendarService {
           expiryDate: verifiedCalendarSettings.tokens?.expiry_date ? new Date(verifiedCalendarSettings.tokens.expiry_date).toISOString() : 'N/A'
         });
         
+        console.log('[DEBUG-CALENDAR] Struttura completa delle impostazioni verificate:', {
+          googleCalendarEnabled: verifiedCalendarSettings.googleCalendarEnabled,
+          hasClientId: !!verifiedCalendarSettings.clientId,
+          hasClientSecret: !!verifiedCalendarSettings.clientSecret,
+          hasRedirectUri: !!verifiedCalendarSettings.redirectUri,
+          hasTokens: !!verifiedCalendarSettings.tokens,
+          hasAccessToken: !!verifiedCalendarSettings.tokens?.access_token,
+          accessTokenLength: verifiedCalendarSettings.tokens?.access_token?.length || 0,
+          hasRefreshToken: !!verifiedCalendarSettings.tokens?.refresh_token,
+          refreshTokenLength: verifiedCalendarSettings.tokens?.refresh_token?.length || 0,
+          tokenType: verifiedCalendarSettings.tokens?.token_type
+        });
+        
         // Verifica che i token salvati siano presenti
         if (!verifiedCalendarSettings.tokens?.access_token) {
           this.log('warn', 'I token salvati non sono presenti o sono incompleti');
+          console.error('[DEBUG-CALENDAR] ERRORE CRITICO: I token salvati non sono presenti o sono incompleti');
           throw new Error('I token salvati non sono presenti o sono incompleti');
         }
         
         this.log('info', 'Verifica completata: i token sono stati salvati correttamente');
+        console.log('[DEBUG-CALENDAR] SUCCESSO: I token sono stati salvati correttamente nel database');
       } catch (parseError) {
         this.log('error', 'Errore nel parsing delle impostazioni durante la verifica', parseError);
         throw new Error('Errore nel parsing delle impostazioni durante la verifica');
       }
     } catch (error) {
       this.log('error', 'Errore durante l\'impostazione del codice di autorizzazione', error);
+      console.error('[DEBUG-CALENDAR] Errore completo in setAuthCode:', error);
       throw error;
+    } finally {
+      console.log('[DEBUG-CALENDAR] Fine processo setAuthCode');
     }
   }
 
@@ -1840,6 +2372,8 @@ export class GoogleCalendarService {
 
   /**
    * Configura il webhook per ricevere notifiche da Google Calendar
+   * @param baseUrl - URL base per il webhook
+   * @returns ID del canale di notifica
    */
   async setupWebhook(baseUrl: string): Promise<string> {
     if (!await this.isServiceEnabled()) {
@@ -1856,7 +2390,7 @@ export class GoogleCalendarService {
       }
       
       this.db = getDatabase();
-    if (!this.db) throw new Error('Database connection failed');
+      if (!this.db) throw new Error('Database connection failed');
       const setting = this.db.prepare(
         'SELECT * FROM app_settings WHERE key = ?'
       ).get('calendar') as AppSetting | undefined;
@@ -1867,25 +2401,23 @@ export class GoogleCalendarService {
       
       const calendarSettings = JSON.parse(setting.value);
       
-      // Importa dinamicamente uuid
-      
       // Genera un ID univoco per il canale
       const channelId = uuidv4();
       
       // Configura il webhook
       const webhookConfig = await this.calendar.events.watch({
-    calendarId: 'primary',
-    requestBody: {
-      id: uuidv4(),
-      type: 'web_hook',
-      address: `${baseUrl}/api/google-calendar/webhook`,
-      expiration: (Date.now() + 7 * 24 * 60 * 60 * 1000).toString()
-    }
-  });
+        calendarId: 'primary',
+        requestBody: {
+          id: uuidv4(),
+          type: 'web_hook',
+          address: `${baseUrl}/api/google-calendar/webhook`,
+          expiration: (Date.now() + 7 * 24 * 60 * 60 * 1000).toString()
+        }
+      });
 
-  const webhookChannelId: string | null = webhookConfig.data?.id ?? null;
-  const resourceId: string | null = webhookConfig.data?.resourceId ?? null;
-  const expiration: string | null = webhookConfig.data?.expiration?.toString() ?? null;
+      const webhookChannelId: string | null = webhookConfig.data?.id ?? null;
+      const resourceId: string | null = webhookConfig.data?.resourceId ?? null;
+      const expiration: string | null = webhookConfig.data?.expiration?.toString() ?? null;
       
       // Salva le informazioni del canale nel database
       calendarSettings.channelId = webhookChannelId;
@@ -1903,7 +2435,7 @@ export class GoogleCalendarService {
       }
       return webhookChannelId;
     } catch (error) {
-      console.error('Errore durante la configurazione del webhook:', error);
+      this.log('error', 'Errore durante la configurazione del webhook:', error);
       throw error;
     }
   }
@@ -2475,58 +3007,6 @@ export class GoogleCalendarService {
   }
 
   /**
-   * Processa un evento di Google Calendar ricevuto tramite webhook
-   */
-  public async processCalendarEvent(resourceState: string, resourceId: string, channelId: string): Promise<void> {
-    try {
-      if (!this.calendar) {
-        await this.configure();
-      }
-      
-      if (!this.calendar) {
-        throw new Error('Google Calendar service non autenticato');
-      }
-      
-      this.db = getDatabase();
-      if (!this.db) throw new Error('Database connection failed');
-      
-      // Gestisci l'evento in base al tipo
-      switch (resourceState) {
-        case 'sync':
-          // Inizializzazione del canale di notifica
-          console.log('Canale di notifica inizializzato:', channelId);
-          break;
-          
-        case 'exists':
-          // Evento creato o modificato
-          await this.handleEvent(resourceId);
-          break;
-          
-        case 'not_exists':
-          // Evento eliminato
-          // Trova l'appuntamento associato all'evento
-          const stmt = this.db.prepare(
-            'SELECT * FROM appointments WHERE google_calendar_event_id = ?'
-          );
-          const appointmentToDelete = stmt.get(resourceId) as Appointment | undefined;
-          
-          if (appointmentToDelete) {
-            // Elimina l'appuntamento
-            const deleteStmt = this.db.prepare('DELETE FROM appointments WHERE id = ?');
-            deleteStmt.run(appointmentToDelete.id);
-            console.log(`Appuntamento ${appointmentToDelete.id} eliminato in seguito all'eliminazione dell'evento su Google Calendar`);
-          }
-          break;
-          
-        default:
-          console.log(`Tipo di evento non gestito: ${resourceState}`);
-      }
-    } catch (error) {
-      console.error('Errore durante l\'elaborazione dell\'evento di Google Calendar:', error);
-    }
-  }
-
-  /**
    * Ottiene la lista dei calendari disponibili nell'account Google
    */
   async getAvailableCalendars(): Promise<Array<{id: string, summary: string}>> {
@@ -2628,4 +3108,164 @@ export class GoogleCalendarService {
       console.error('Errore durante la selezione del calendario:', error);
       throw error;
     }
-  }}
+  }
+  
+  /**
+   * Salva le informazioni del webhook nelle impostazioni
+   * @param webhookResponse - Risposta dalla creazione del webhook
+   * @param setting - Impostazione del calendario dal database
+   */
+  private async saveWebhookInfo(webhookResponse: any, setting: AppSetting): Promise<void> {
+    try {
+      const calendarSettings = JSON.parse(setting.value);
+      calendarSettings.channelId = webhookResponse.data.id;
+      calendarSettings.resourceId = webhookResponse.data.resourceId;
+      calendarSettings.expiration = webhookResponse.data.expiration;
+      
+      const updateStmt = this.db.prepare(
+        'UPDATE app_settings SET value = ? WHERE key = ?'
+      );
+      updateStmt.run(
+        JSON.stringify(calendarSettings),
+        'calendar'
+      );
+      
+      this.log('info', 'Webhook configurato con successo', {
+        channelId: webhookResponse.data.id,
+        expiration: webhookResponse.data.expiration
+          ? new Date(parseInt(webhookResponse.data.expiration as string)).toISOString()
+          : 'N/A'
+      });
+    } catch (error) {
+      this.log('error', 'Errore durante il salvataggio delle informazioni del webhook', error);
+      throw error;
+    }
+  }
+  
+  
+  /**
+   * Elabora un evento ricevuto dal webhook di Google Calendar
+   * @param resourceState - Stato della risorsa (sync, exists, not_exists)
+   * @param resourceId - ID della risorsa
+   * @param channelId - ID del canale di notifica
+   */
+  async processCalendarEvent(resourceState: string, resourceId: string, channelId: string): Promise<void> {
+    this.log('info', `Processamento evento di calendario: stato=${resourceState}, resourceId=${resourceId}, channelId=${channelId}`);
+    
+    // Se lo stato è 'sync', è solo una conferma di sincronizzazione
+    if (resourceState === 'sync') {
+      this.log('info', 'Evento di sincronizzazione ricevuto, nessuna azione richiesta');
+      return;
+    }
+    
+    // Gestisci l'evento in base allo stato della risorsa
+    if (resourceState === 'exists') {
+      this.log('info', 'Evento di modifica calendario ricevuto, elaborazione in corso...');
+      await this.handleCalendarEvent(resourceId);
+    } else if (resourceState === 'not_exists') {
+      this.log('warn', 'Evento di eliminazione calendario ricevuto, potrebbe essere necessario rinnovare il webhook');
+      // Qui si potrebbe implementare la logica per rinnovare il webhook se necessario
+    } else {
+      this.log('warn', `Stato risorsa sconosciuto: ${resourceState}, nessuna azione intrapresa`);
+    }
+  }
+
+  /**
+   * Gestisce un evento di calendario in base al resourceId
+   * @param resourceId - ID della risorsa
+   */
+  async handleCalendarEvent(resourceId: string): Promise<void> {
+    this.log('info', `Gestione evento Google Calendar con resourceId: ${resourceId}`);
+    
+    try {
+      // Verifica che il servizio sia autenticato
+      const isAuthenticated = await this.isServiceAuthenticated();
+      if (!isAuthenticated) {
+        this.log('error', 'Impossibile gestire evento: servizio non autenticato');
+        throw new Error('Servizio Google Calendar non autenticato');
+      }
+      
+      // Ottieni le informazioni sul canale dal database
+      const db = getDatabase();
+      if (!db) {
+        throw new Error('Database non disponibile');
+      }
+      
+      const channel = db.prepare('SELECT * FROM google_calendar_channels WHERE resource_id = ?').get(resourceId) as any;
+      if (!channel) {
+        this.log('warn', `Nessun canale trovato per resourceId: ${resourceId}`);
+        return;
+      }
+      
+      // Ottieni le impostazioni del calendario
+      const settings = await this.getCalendarSettings();
+      if (!settings || !settings.selectedCalendarId) {
+        this.log('error', 'Impossibile gestire evento: nessun calendario selezionato');
+        throw new Error('Nessun calendario selezionato');
+      }
+      
+      // Ottieni gli eventi aggiornati dal calendario
+      const calendar = this.getCalendar();
+      if (!calendar) {
+        throw new Error('Client Google Calendar non inizializzato');
+      }
+      
+      // Ottieni gli eventi modificati recentemente
+      const now = new Date();
+      const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000); // 5 minuti fa
+      
+      const eventsResponse = await calendar.events.list({
+        calendarId: settings.selectedCalendarId,
+        updatedMin: fiveMinutesAgo.toISOString(),
+        singleEvents: true,
+        orderBy: 'updated'
+      });
+      
+      if (!eventsResponse.data.items || eventsResponse.data.items.length === 0) {
+        this.log('info', 'Nessun evento aggiornato trovato');
+        return;
+      }
+      
+      this.log('info', `Trovati ${eventsResponse.data.items.length} eventi aggiornati`);
+      
+      // Processa ogni evento
+      for (const event of eventsResponse.data.items) {
+        await this.processCalendarEventInternal(event);
+      }
+    } catch (error) {
+      this.log('error', 'Errore durante la gestione dell\'evento', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Processa un singolo evento di Google Calendar
+   * @param event - Evento di Google Calendar
+   */
+  protected async processCalendarEventInternal(event: calendar_v3.Schema$Event): Promise<void> {
+    if (!event.id) {
+      this.log('warn', 'Evento senza ID, impossibile processare');
+      return;
+    }
+    
+    this.log('info', `Processamento evento: ${event.id} - ${event.summary}`);
+    
+    const db = getDatabase();
+    if (!db) {
+      throw new Error('Database non disponibile');
+    }
+    
+    // Verifica se l'evento è già associato a un appuntamento
+    const existingAppointment = db.prepare('SELECT * FROM appointments WHERE google_calendar_event_id = ?').get(event.id) as { id: number } | undefined;
+    
+    if (existingAppointment) {
+      // Aggiorna l'appuntamento esistente
+      this.log('info', `Evento ${event.id} associato all'appuntamento ID ${existingAppointment.id}, aggiornamento in corso...`);
+      // Implementazione dell'aggiornamento dell'appuntamento
+    } else {
+      // Evento non associato a un appuntamento esistente
+      this.log('info', `Evento ${event.id} non associato a nessun appuntamento esistente`);
+      // Implementazione della creazione di un nuovo appuntamento se necessario
+    }
+  }
+}

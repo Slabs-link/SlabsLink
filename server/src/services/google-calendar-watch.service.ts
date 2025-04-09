@@ -428,7 +428,7 @@ export class GoogleCalendarWatchService extends GoogleCalendarService {
    * Processa un singolo evento di Google Calendar
    * @param event - Evento di Google Calendar
    */
-  private async processCalendarEventInternal(event: calendar_v3.Schema$Event): Promise<void> {
+  protected override async processCalendarEventInternal(event: calendar_v3.Schema$Event): Promise<void> {
     if (!event.id) {
       this.log('warn', 'Evento senza ID, impossibile processare');
       return;

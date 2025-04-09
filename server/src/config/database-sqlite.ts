@@ -13,9 +13,13 @@ export class DatabaseManager {
         initializeDatabase();
         
         // Connect to the existing database
-        const dbPath = 'C:\\Users\\Ciro Latela\\Desktop\\SlabsLink\\server\\data\\slabs.db';
+        const dbPath = path.resolve(__dirname, '../../data/slabs.db');
         console.log(`Connecting to database at: ${dbPath}`);
+        // Rimuovo verbose: console.log per evitare log eccessivi di query SQL nel terminale
         this.instance = new BetterSqlite3(dbPath);
+        // Log database connection for debugging
+        console.log(`Database connection established at: ${dbPath}`);
+        console.log('Database instance created successfully');
         
         // Enable foreign keys
         this.instance.pragma('foreign_keys = ON');

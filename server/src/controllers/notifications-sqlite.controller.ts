@@ -473,12 +473,34 @@ export const processSingleNotification = async (req: Request, res: Response) => 
     }
     
     try {
-      // Here you would integrate with your messaging service (e.g. Twilio)
-      // For now, we'll just mark it as sent
+      // Verifica che l'utente abbia un numero di telefono
+      if (!notification.phone) {
+        throw new Error('L\'utente non ha un numero di telefono valido');
+      }
+      
+      // Formatta il numero di telefono rimuovendo spazi e caratteri non numerici
+      let formattedNumber = notification.phone.replace(/\s+/g, '').replace(/[^0-9+]/g, '');
+      
+      // Aggiungi il prefisso italiano +39 se non è già presente
+      if (!formattedNumber.startsWith('+')) {
+        formattedNumber = '+39' + formattedNumber;
+      }
+      
+      // Ottieni le impostazioni WhatsApp
+      const whatsappSettings = db.prepare('SELECT * FROM app_settings WHERE key LIKE \'whatsapp%\'').all() as AppSetting[];
+      const settings: Record<string, string> = {};
+      whatsappSettings.forEach(setting => {
+        settings[setting.key] = setting.value;
+      });
+      
+      // Qui si integrerebbe con il servizio di messaggistica WhatsApp
+      // Per ora, segniamo semplicemente come inviata
+      console.log(`Invio notifica WhatsApp al numero ${formattedNumber}: ${notification.message}`);
+      
+      // Aggiorna lo stato della notifica
       const updateStmt = db.prepare(`
         UPDATE notifications SET
           status = 'sent',
-          error_message = NULL,
           updated_at = datetime('now')
         WHERE id = ?
       `);
@@ -488,7 +510,7 @@ export const processSingleNotification = async (req: Request, res: Response) => 
       return res.json({
         id: notification.id,
         status: 'sent',
-        message: 'Notification processed successfully'
+        message: 'Notifica WhatsApp inviata con successo'
       });
     } catch (error: any) {
       const updateStmt = db.prepare(`

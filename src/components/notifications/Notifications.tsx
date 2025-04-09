@@ -155,6 +155,9 @@ const Notifications: React.FC = () => {
   
   // Stato per gli appuntamenti
   const [appointments, setAppointments] = useState<any[]>([]);
+  
+  // Stato per l'invio automatico di WhatsApp
+  const [autoSendWhatsApp, setAutoSendWhatsApp] = useState<boolean>(false);
 
   // Effetto per reagire ai cambiamenti dei filtri
 
@@ -402,7 +405,12 @@ const Notifications: React.FC = () => {
       if (selectedNotifications.length > 0) {
         // Elaborazione delle notifiche selezionate
         for (const id of selectedNotifications) {
-          await axios.post(`http://localhost:3001/api/notifications/process/${id}`);
+          if (autoSendWhatsApp) {
+            // Usa l'invio automatico per le notifiche selezionate
+            await handleProcessSingleNotification(id, true);
+          } else {
+            await axios.post(`http://localhost:3001/api/notifications/process/${id}`);
+          }
         }
         
         setNotification({
@@ -415,13 +423,33 @@ const Notifications: React.FC = () => {
         setSelectMode(false);
       } else {
         // Elaborazione di tutte le notifiche in attesa
-        const response = await axios.post('http://localhost:3001/api/notifications/process');
-        
-        setNotification({
-          open: true,
-          message: response.data.message || 'Notifiche elaborate con successo',
-          severity: 'success'
-        });
+        if (autoSendWhatsApp) {
+          // Ottieni tutte le notifiche in attesa
+          const pendingResponse = await axios.get('http://localhost:3001/api/notifications?status=pending');
+          if (pendingResponse.data && Array.isArray(pendingResponse.data.notifications)) {
+            const pendingNotifications = pendingResponse.data.notifications;
+            
+            // Processa ogni notifica in attesa con invio automatico
+            for (const notification of pendingNotifications) {
+              await handleProcessSingleNotification(notification.id, true);
+            }
+            
+            setNotification({
+              open: true,
+              message: `${pendingNotifications.length} notifiche elaborate con successo`,
+              severity: 'success'
+            });
+          }
+        } else {
+          // Usa il metodo standard senza invio automatico
+          const response = await axios.post('http://localhost:3001/api/notifications/process');
+          
+          setNotification({
+            open: true,
+            message: response.data.message || 'Notifiche elaborate con successo',
+            severity: 'success'
+          });
+        }
       }
       
       fetchNotifications();
@@ -470,7 +498,7 @@ const Notifications: React.FC = () => {
   };
 
   // Funzione per processare una singola notifica in attesa
-  const handleProcessSingleNotification = async (id: number) => {
+  const handleProcessSingleNotification = async (id: number, autoSend: boolean = false) => {
     try {
       setNotification({
         open: true,
@@ -494,8 +522,8 @@ const Notifications: React.FC = () => {
         throw new Error('L\'utente non ha un numero di telefono');
       }
       
-      // Invia la notifica tramite WhatsApp
-      await notificationService.sendWhatsAppNotification(phoneNumber, notificationData.message);
+      // Invia la notifica tramite WhatsApp con l'opzione di invio automatico
+      await notificationService.sendWhatsAppNotification(phoneNumber, notificationData.message, autoSend);
       
       // Aggiorna lo stato della notifica nel database
       const response = await axios.post(`http://localhost:3001/api/notifications/process/${id}`);

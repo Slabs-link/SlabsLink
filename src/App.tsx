@@ -6,11 +6,13 @@ import Appointments from './components/appointments/Appointments';
 import Settings from './components/settings/Settings';
 import { SetupWizard } from './components/setup/SetupWizard';
 import { ThemeProvider } from '@mui/material/styles';
+import CssBaseline from '@mui/material/CssBaseline';
 import theme from './theme/theme';
 import { LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { it } from 'date-fns/locale';
 import axios from 'axios';
+import TokenExpirationAlert from './components/notifications/TokenExpirationAlert';
 // Add missing imports for components referenced in routes
 import Calendar from './components/calendar/Calendar';
 //import Patients from './components/patients/Patients';
@@ -55,6 +57,8 @@ function App() {
   
   return (
     <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <TokenExpirationAlert />
       <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={it}>
         <Router>
           <Routes>
@@ -70,8 +74,8 @@ function App() {
             <Route path="/users" element={<Users />} />
             <Route path="/templates" element={<TemplateManager />} />
             <Route path="/appointment-templates" element={<AppointmentNotificationTemplates />} />
-            {/* Aggiungi una route per gestire il reindirizzamento dopo l'autenticazione di Google Calendar */}
-            <Route path="/auth/google/callback" element={<Navigate to="/settings?tab=calendar&auth=success" />} />
+            {/* Modifica: utilizziamo il componente GoogleAuthCallback invece del reindirizzamento diretto */}
+            <Route path="/auth/google/callback" element={<GoogleAuthCallback />} />
           </Routes>
         </Router>
       </LocalizationProvider>

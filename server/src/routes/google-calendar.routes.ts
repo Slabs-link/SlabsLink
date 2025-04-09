@@ -1,6 +1,7 @@
 import express from 'express';
 import { Router, Request, Response } from 'express';
 import { getAuthUrl, handleAuthCallback, handleWebhook, setupWebhook, getCalendarEvents, syncAppointments, testSyncAppointment, checkIntegrationStatus, getBookingLink, syncFromGoogleCalendar } from '../controllers/google-calendar.controller';
+import { getAuthStatus } from '../controllers/google-calendar-auth.controller';
 import { getAvailableCalendars, setSelectedCalendar } from '../controllers/google-calendar-management.controller';
 import { createCalendar } from '../controllers/google-calendar-create.controller';
 import { GoogleCalendarService } from '../services/google-calendar.service';
@@ -43,6 +44,9 @@ router.get('/test-sync/:appointmentId', testSyncAppointment);
 
 // Endpoint per verificare lo stato dell'integrazione
 router.get('/status', checkIntegrationStatus);
+
+// Ottieni lo stato dell'autenticazione di Google Calendar
+router.get('/auth-status', getAuthStatus);
 
 // Endpoint per ottenere il link di prenotazione
 router.get('/booking-link', getBookingLink);

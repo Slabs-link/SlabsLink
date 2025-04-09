@@ -401,16 +401,43 @@ export const createAppointment = async (req: Request, res: Response) => {
             .replace('{time}', time);
           
           // Insert notification
-          db.prepare(`
+          const notificationInsert = db.prepare(`
             INSERT INTO notifications (
               user_id, message, status, template_id, appointment_id
             ) VALUES (?, ?, 'pending', ?, ?)
-          `).run(
+          `);
+          
+          const notificationResult = notificationInsert.run(
             patient_id,
             message,
             template.id,
             appointmentId
           );
+          
+          // Ottieni l'ID della notifica appena creata
+          const notificationId = notificationResult.lastInsertRowid;
+          
+          // Ottieni il numero di telefono dell'utente
+          const userPhone = db.prepare('SELECT phone FROM users WHERE id = ?').get(patient_id) as { phone: string };
+          
+          // Processa immediatamente la notifica (cambia lo stato da 'pending' a 'sent')
+          if (userPhone && userPhone.phone) {
+            try {
+              // Aggiorna lo stato della notifica a 'sent'
+              db.prepare(`
+                UPDATE notifications SET
+                  status = 'sent',
+                  sent_at = datetime('now'),
+                  updated_at = datetime('now')
+                WHERE id = ?
+              `).run(notificationId);
+              
+              console.log(`Notifica ID ${notificationId} inviata automaticamente all'utente ${patient_id}`);
+            } catch (notificationError) {
+              console.error(`Errore nell'invio automatico della notifica: ${notificationError}`);
+              // Non blocchiamo l'aggiornamento dell'appuntamento se l'invio della notifica fallisce
+            }
+          }
         }
       }
       
@@ -944,16 +971,43 @@ export const updateAppointment = async (req: Request, res: Response) => {
             .replace('{time}', finalTime);
           
           // Insert notification
-          db.prepare(`
+          const notificationInsert = db.prepare(`
             INSERT INTO notifications (
               user_id, message, status, template_id, appointment_id
             ) VALUES (?, ?, 'pending', ?, ?)
-          `).run(
+          `);
+          
+          const notificationResult = notificationInsert.run(
             patient_id,
             message,
             template.id,
             id
           );
+          
+          // Ottieni l'ID della notifica appena creata
+          const notificationId = notificationResult.lastInsertRowid;
+          
+          // Ottieni il numero di telefono dell'utente
+          const userPhone = db.prepare('SELECT phone FROM users WHERE id = ?').get(patient_id) as { phone: string };
+          
+          // Processa immediatamente la notifica (cambia lo stato da 'pending' a 'sent')
+          if (userPhone && userPhone.phone) {
+            try {
+              // Aggiorna lo stato della notifica a 'sent'
+              db.prepare(`
+                UPDATE notifications SET
+                  status = 'sent',
+                  sent_at = datetime('now'),
+                  updated_at = datetime('now')
+                WHERE id = ?
+              `).run(notificationId);
+              
+              console.log(`Notifica ID ${notificationId} inviata automaticamente all'utente ${patient_id}`);
+            } catch (notificationError) {
+              console.error(`Errore nell'invio automatico della notifica: ${notificationError}`);
+              // Non blocchiamo la creazione dell'appuntamento se l'invio della notifica fallisce
+            }
+          }
         }
       }
       

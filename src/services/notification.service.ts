@@ -35,8 +35,9 @@ export class NotificationService {
 
   /**
    * Invia una notifica WhatsApp aprendo WhatsApp Web o usando l'API Business
+   * Con supporto per l'automazione dell'invio tramite Puppeteer
    */
-  public async sendWhatsAppNotification(phoneNumber: string, message: string): Promise<void> {
+  public async sendWhatsAppNotification(phoneNumber: string, message: string, autoSend: boolean = false): Promise<void> {
     // Formatta il numero di telefono rimuovendo spazi e caratteri non numerici
     let formattedNumber = phoneNumber.replace(/\s+/g, '').replace(/[^0-9+]/g, '');
     
@@ -56,11 +57,50 @@ export class NotificationService {
       // Sostituisci il nome dell'azienda nel messaggio
       const messageWithCompanyName = message.replace(/SlabsLink/g, this.companyName);
       
-      // Crea l'URL per WhatsApp Web
-      const whatsappUrl = `https://web.whatsapp.com/send?phone=${formattedNumber}&text=${encodeURIComponent(messageWithCompanyName)}`;
-      
-      // Apri WhatsApp Web in una nuova finestra
-      window.open(whatsappUrl, '_blank');
+      if (autoSend) {
+        // Usa il servizio di automazione per inviare il messaggio
+        try {
+          // Importa dinamicamente il servizio di automazione
+          const { whatsAppAutomationService } = await import('./whatsapp-automation.service');
+          
+          // Inizializza il servizio se non è già inizializzato
+          if (!whatsAppAutomationService.isReady()) {
+            const initialized = await whatsAppAutomationService.initialize();
+            if (!initialized) {
+              throw new Error('Impossibile inizializzare il servizio di automazione WhatsApp');
+            }
+          }
+          
+          // Naviga alla chat WhatsApp con il messaggio precompilato
+          const navigated = await whatsAppAutomationService.navigateToWhatsAppChat(formattedNumber, messageWithCompanyName);
+          if (!navigated) {
+            throw new Error('Impossibile navigare alla chat WhatsApp');
+          }
+          
+          // Attendi un momento per assicurarsi che la pagina sia completamente caricata
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          // Invia il messaggio
+          const sent = await whatsAppAutomationService.sendMessage();
+          if (!sent) {
+            throw new Error('Impossibile inviare il messaggio WhatsApp');
+          }
+          
+          console.log('Messaggio WhatsApp inviato automaticamente con successo');
+        } catch (error) {
+          console.error('Errore durante l\'invio automatico del messaggio WhatsApp:', error);
+          
+          // In caso di errore, apri WhatsApp Web normalmente
+          const whatsappUrl = `https://web.whatsapp.com/send?phone=${formattedNumber}&text=${encodeURIComponent(messageWithCompanyName)}`;
+          window.open(whatsappUrl, '_blank');
+        }
+      } else {
+        // Crea l'URL per WhatsApp Web
+        const whatsappUrl = `https://web.whatsapp.com/send?phone=${formattedNumber}&text=${encodeURIComponent(messageWithCompanyName)}`;
+        
+        // Apri WhatsApp Web in una nuova finestra
+        window.open(whatsappUrl, '_blank');
+      }
     }
   }
 

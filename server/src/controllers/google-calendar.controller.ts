@@ -12,7 +12,16 @@ const googleCalendarService = new GoogleCalendarService();
 
 // Function to log messages
 const logMessage = (message: string, data?: any) => {
-  console.log(`[Google Calendar Controller] ${message}`, data ? data : '');
+  // Filtra i log per mostrare solo quelli importanti relativi all'autenticazione
+  const isAuthRelated = message.includes('auth') || 
+                        message.includes('token') || 
+                        message.includes('OAuth') || 
+                        message.includes('callback');
+  
+  // Mostra solo log importanti o relativi all'autenticazione
+  if (isAuthRelated || message.includes('Error') || message.includes('errore')) {
+    console.log(`[Google Calendar Controller] ${message}`, data ? data : '');
+  }
 };
 
 /**
@@ -72,6 +81,7 @@ export const getAuthUrl = async (req: Request, res: Response) => {
     const authUrl = oauth2Client.generateAuthUrl({
       access_type: 'offline',
       scope: scopes,
+      prompt: 'consent' // Forza Google a mostrare la schermata di consenso e fornire un nuovo refresh token
     });
     
     // Controlla se la richiesta è per /auth-url o /auth
@@ -98,6 +108,7 @@ export const getAuthUrl = async (req: Request, res: Response) => {
  * @param res - Express response object
  */
 export const handleAuthCallback = async (req: Request, res: Response) => {
+  console.log('[CALLBACK] Handling OAuth callback - callback effettuato');
   try {
     logMessage('Handling OAuth callback');
     
@@ -110,129 +121,53 @@ export const handleAuthCallback = async (req: Request, res: Response) => {
     
     logMessage(`Codice di autorizzazione ricevuto: ${code.toString().substring(0, 10)}...`);
     
-    const db = getDatabase();
-    if (!db) {
-      logMessage('Impossibile ottenere la connessione al database');
-      return res.status(500).json({ message: 'Errore di connessione al database' });
-    }
-    
-    logMessage('Ricerca delle impostazioni del calendario nel database');
-    const setting = db.prepare('SELECT * FROM app_settings WHERE key = ?').get('calendar') as { value: string };
-    
-    if (!setting) {
-      logMessage('Impostazioni di Google Calendar non trovate nel database');
-      return res.status(400).json({ message: 'Impostazioni di Google Calendar non configurate' });
-    }
-    
-    // Converti il valore JSON in oggetto JavaScript
-    let calendarSettings;
     try {
-      logMessage('Parsing delle impostazioni del calendario');
-      calendarSettings = JSON.parse(setting.value?.toString() || '{}');
-      logMessage('Impostazioni del calendario parsate con successo', {
-        hasClientId: !!calendarSettings.clientId,
-        hasClientSecret: !!calendarSettings.clientSecret,
-        hasRedirectUri: !!calendarSettings.redirectUri
-      });
-    } catch (error) {
-      logMessage(`Errore nel parsing delle impostazioni: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      return res.status(500).json({ message: 'Errore nel parsing delle impostazioni' });
-    }
-    
-    // Importa dinamicamente le librerie di Google
-    logMessage('Importazione delle librerie di Google');
-    const { google } = await import('googleapis');
-    
-    // Crea un client OAuth2
-    logMessage('Creazione del client OAuth2');
-    const oauth2Client = new google.auth.OAuth2(
-      calendarSettings.clientId,
-      calendarSettings.clientSecret,
-      calendarSettings.redirectUri
-    );
-    
-    // Utilizzo del servizio GoogleCalendarService per gestire l'autenticazione
-    logMessage('Utilizzo del servizio GoogleCalendarService per gestire l\'autenticazione');
-    
-    try {
-      logMessage(`Tentativo di autenticazione con codice: ${code.toString().substring(0, 10)}...`);
-      
-      // Verifica che il codice sia valido prima di procedere
-      if (!code || typeof code !== 'string' || code.toString().trim() === '') {
-        logMessage('Codice di autorizzazione invalido o vuoto');
-        return res.status(400).json({ message: 'Codice di autorizzazione invalido' });
-      }
-      
       // Utilizziamo il metodo setAuthCode del servizio per gestire l'intero processo
       await googleCalendarService.setAuthCode(code.toString());
       
       logMessage('Token OAuth2 ottenuti e salvati con successo tramite il servizio');
       
       // Verifica che i token siano stati effettivamente salvati
+      const db = getDatabase();
+      if (!db) {
+        throw new Error('Impossibile ottenere la connessione al database');
+      }
+      
       const verifySettings = db.prepare('SELECT * FROM app_settings WHERE key = ?').get('calendar') as { value: string } | undefined;
       
-      if (verifySettings) {
-        try {
-          const verifiedCalendarSettings = JSON.parse(verifySettings.value);
-          logMessage('Verifica dei token salvati', {
-            tokensPresent: !!verifiedCalendarSettings.tokens,
-            hasAccessToken: !!verifiedCalendarSettings.tokens?.access_token,
-            accessTokenLength: verifiedCalendarSettings.tokens?.access_token?.length,
-            hasRefreshToken: !!verifiedCalendarSettings.tokens?.refresh_token,
-            refreshTokenLength: verifiedCalendarSettings.tokens?.refresh_token?.length,
-            tokenType: verifiedCalendarSettings.tokens?.token_type,
-            expiryDate: verifiedCalendarSettings.tokens?.expiry_date
-          });
-        } catch (parseError) {
-          logMessage(`Errore nel parsing delle impostazioni durante la verifica: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`);
-        }
-      } else {
-        logMessage('Impossibile verificare i token salvati: impostazioni non trovate');
+      if (!verifySettings || !verifySettings.value) {
+        throw new Error('Impossibile verificare i token salvati: impostazioni non trovate o valore vuoto');
       }
-    } catch (tokenError) {
-      logMessage(`Errore durante il salvataggio dei token: ${tokenError instanceof Error ? tokenError.message : 'Unknown error'}`);
-      throw tokenError;
-    }
-    
-    // Inizializza il servizio Google Calendar con i nuovi token
-    logMessage('Inizializzazione del servizio Google Calendar');
-    // Utilizziamo l'istanza globale del servizio invece di crearne una nuova
-    await googleCalendarService.configure();
-    const isAuthenticated = await googleCalendarService.isServiceAuthenticated();
-    logMessage(`Servizio Google Calendar autenticato: ${isAuthenticated}`);
-    
-    // Verifica aggiuntiva dello stato di autenticazione
-    if (!isAuthenticated) {
-      logMessage('ATTENZIONE: Il servizio Google Calendar non risulta autenticato dopo il salvataggio dei token');
       
-      // Verifica dettagliata dei token nel database
-      const dbCheck = getDatabase();
-      const settingCheck = dbCheck.prepare('SELECT * FROM app_settings WHERE key = ?').get('calendar') as { value: string } | undefined;
-      
-      if (settingCheck) {
-        try {
-          const parsedSettings = JSON.parse(settingCheck.value);
-          logMessage('Verifica approfondita dei token nel database', {
-            hasTokens: !!parsedSettings.tokens,
-            tokenType: parsedSettings.tokens?.token_type,
-            hasAccessToken: !!parsedSettings.tokens?.access_token,
-            accessTokenLength: parsedSettings.tokens?.access_token?.length,
-            hasRefreshToken: !!parsedSettings.tokens?.refresh_token,
-            refreshTokenLength: parsedSettings.tokens?.refresh_token?.length,
-            expiryDate: parsedSettings.tokens?.expiry_date
-          });
-        } catch (e) {
-          logMessage(`Errore nel parsing delle impostazioni durante la verifica: ${e instanceof Error ? e.message : 'Unknown error'}`);
+      try {
+        const verifiedCalendarSettings = JSON.parse(verifySettings.value);
+        if (!verifiedCalendarSettings.tokens || !verifiedCalendarSettings.tokens.access_token) {
+          throw new Error('I token salvati non sono presenti o sono incompleti');
         }
+        
+        logMessage('Verifica dei token salvati completata con successo');
+      } catch (parseError) {
+        throw new Error(`Errore nel parsing delle impostazioni durante la verifica: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`);
       }
+      
+      // Inizializza il servizio Google Calendar con i nuovi token
+      logMessage('Inizializzazione del servizio Google Calendar');
+      await googleCalendarService.configure();
+      const isAuthenticated = await googleCalendarService.isServiceAuthenticated();
+      
+      if (!isAuthenticated) {
+        throw new Error('Il servizio Google Calendar non risulta autenticato dopo il salvataggio dei token');
+      }
+      
+      logMessage('Autenticazione completata con successo, reindirizzamento alla pagina delle impostazioni');
+      return res.redirect('/settings?tab=calendar&auth=success');
+    } catch (authError) {
+      logMessage(`Errore durante l'autenticazione: ${authError instanceof Error ? authError.message : 'Unknown error'}`);
+      return res.redirect('/settings?tab=calendar&auth=error&message=' + encodeURIComponent(authError instanceof Error ? authError.message : 'Errore sconosciuto'));
     }
-    
-    // Reindirizza l'utente alla pagina delle impostazioni
-    logMessage('Reindirizzamento alla pagina delle impostazioni');
-    res.redirect('/settings?tab=calendar&auth=success');
   } catch (error) {
     logMessage(`Error handling auth callback: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    res.status(500).json({ 
+    return res.status(500).json({ 
       error: 'Failed to handle authentication callback',
       details: error instanceof Error ? error.message : 'Unknown error'
     });

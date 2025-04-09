@@ -32,6 +32,13 @@ const GeneralSettings: React.FC<GeneralSettingsProps> = ({ settings, onChange, o
   const API_BASE_URL = 'http://localhost:3001/api';
 
   useEffect(() => {
+    // Verifica se le impostazioni sono già state passate come props
+    // Se i valori essenziali sono già presenti, non effettuare la chiamata API
+    if (settings.clinicName) {
+      console.log('Utilizzo impostazioni già fornite:', settings);
+      return;
+    }
+    
     const fetchSettings = async () => {
       setLoading(true);
       try {
@@ -53,15 +60,15 @@ const GeneralSettings: React.FC<GeneralSettingsProps> = ({ settings, onChange, o
             console.error('Errore nel parsing delle impostazioni:', e);
             generalSettings = {};
           }
-          const settings = {
-            clinicName: generalSettings.clinicName || '',
-            address: generalSettings.address || '',
-            phone: generalSettings.phone || '',
-            email: generalSettings.email || '',
-            website: generalSettings.website || ''
+          const newSettings = {
+            clinicName: generalSettings.clinicName || settings.clinicName || '',
+            address: generalSettings.address || settings.address || '',
+            phone: generalSettings.phone || settings.phone || '',
+            email: generalSettings.email || settings.email || '',
+            website: generalSettings.website || settings.website || ''
           };
-          console.log('Impostazioni generali caricate:', settings);
-          onChange(settings);
+          console.log('Impostazioni generali caricate:', newSettings);
+          onChange(newSettings);
         }
       } catch (error) {
         console.error('Errore durante il recupero delle impostazioni generali:', error);
@@ -71,7 +78,7 @@ const GeneralSettings: React.FC<GeneralSettingsProps> = ({ settings, onChange, o
     };
     
     fetchSettings();
-  }, []);
+  }, [settings, onChange]);
   
   
   const handleSaveSettings = async () => {
