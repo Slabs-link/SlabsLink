@@ -1704,12 +1704,13 @@ export class GoogleCalendarService {
       }
       
       // Recupera gli appuntamenti che non sono mai stati sincronizzati (sync_status IS NULL)
-      // o che sono stati modificati dopo l'ultima sincronizzazione (sync_status = 'modified')
+      // o che sono stati modificati dopo l'ultima sincronizzazione (sync_status = 'pending')
+      // Nota: Utilizziamo 'pending' invece di 'modified' per rispettare il vincolo CHECK della tabella
       const appointments = this.db.prepare(
         `SELECT a.*, u.first_name, u.last_name 
          FROM appointments a 
          LEFT JOIN users u ON a.patient_id = u.id 
-         WHERE a.sync_status IS NULL OR a.sync_status = 'modified'`
+         WHERE a.sync_status IS NULL OR a.sync_status = 'pending'`
       ).all() as Appointment[] || [];
       
       this.log('info', `Trovati ${appointments.length} appuntamenti non sincronizzati`);
@@ -1748,11 +1749,12 @@ export class GoogleCalendarService {
       const currentDate = new Date().toISOString();
       
       // Recupera gli appuntamenti futuri che non sono mai stati sincronizzati o che sono stati modificati
+      // Nota: Utilizziamo 'pending' invece di 'modified' per rispettare il vincolo CHECK della tabella
       const appointments = this.db.prepare(
         `SELECT a.*, u.first_name, u.last_name 
          FROM appointments a 
          LEFT JOIN users u ON a.patient_id = u.id 
-         WHERE (a.sync_status IS NULL OR a.sync_status = 'modified') 
+         WHERE (a.sync_status IS NULL OR a.sync_status = 'pending') 
          AND a.start_time > ? 
          ORDER BY a.start_time ASC`
       ).all(currentDate) as Appointment[] || [];
@@ -1827,37 +1829,93 @@ export class GoogleCalendarService {
 
   async handleEvent(resourceId: string): Promise<void> {
     try {
-      const response = await this.calendar?.events.get({
-        calendarId: 'primary',
-        eventId: resourceId
-      });
-
-      if (!response || !response.data) {
-        throw new Error('Evento non trovato');
+      this.log('info', `Gestione evento con resourceId: ${resourceId}`);
+      
+      // Verifica se il calendario è configurato
+      if (!this.calendar) {
+        await this.configure();
+        if (!this.calendar) {
+          throw new Error('Google Calendar service non autenticato');
+        }
       }
       
-      const event = response.data;
+      // Ottieni le impostazioni del calendario
+      const settings = await this.getCalendarSettings();
+      const calendarId = settings?.selectedCalendarId || 'primary';
+      
+      try {
+        // Tenta di ottenere l'evento da Google Calendar
+        const response = await this.calendar.events.get({
+          calendarId: calendarId,
+          eventId: resourceId
+        });
 
-      this.db = getDatabase();
-      if (!this.db) throw new Error('Database connection failed');
-      const appointment = await (await this.db.prepare(
-        'SELECT * FROM appointments WHERE google_calendar_event_id = ?'
-      )).get(event.id) as Appointment | undefined;
+        if (!response || !response.data) {
+          throw new Error('Evento non trovato');
+        }
+        
+        const event = response.data;
+        this.log('info', `Evento trovato: ${event.summary}`);
 
-      if (appointment) {
-        await (await this.db.prepare(
-          'UPDATE appointments SET start_time = ?, end_time = ?, notes = ? WHERE id = ?'
-        )).run(
-          new Date(event.start?.dateTime ?? new Date()).toISOString(),
-          new Date(event.end?.dateTime ?? new Date()).toISOString(),
-          event.description || '',
-          appointment.id
-        );
-      } else if (this.notificationChannel) {
-        await this.createAppointmentInDatabase(event);
+        this.db = getDatabase();
+        if (!this.db) throw new Error('Database connection failed');
+        
+        const appointment = await this.db.prepare(
+          'SELECT * FROM appointments WHERE google_calendar_event_id = ?'
+        ).get(event.id) as Appointment | undefined;
+
+        if (appointment) {
+          // Aggiorna l'appuntamento esistente
+          this.log('info', `Aggiornamento appuntamento esistente con ID: ${appointment.id}`);
+          await this.db.prepare(
+            'UPDATE appointments SET start_time = ?, end_time = ?, notes = ? WHERE id = ?'
+          ).run(
+            new Date(event.start?.dateTime ?? new Date()).toISOString(),
+            new Date(event.end?.dateTime ?? new Date()).toISOString(),
+            event.description || '',
+            appointment.id
+          );
+        } else if (this.notificationChannel) {
+          this.log('info', `[DESCRIPTION] ${event.description}`);
+          // Crea un nuovo appuntamento solo se la descrizione inizia con "prenotato da"
+          if (event.description && event.description.toLowerCase().startsWith('prenotato da')) {
+            this.log('info', `Creazione nuovo appuntamento da evento con descrizione valida`);
+            await this.createAppointmentInDatabase(event);
+          } else {
+            this.log('info', `Evento ignorato: la descrizione non inizia con "prenotato da"`);
+          }
+        }
+      } catch (error: any) {
+        // Verifica se l'errore è dovuto al fatto che l'evento è stato eliminato (404 Not Found)
+        if (error?.response?.status === 404 || 
+            (error?.errors && error.errors[0]?.reason === 'notFound')) {
+          
+          this.log('info', `Evento con ID ${resourceId} non trovato su Google Calendar, potrebbe essere stato eliminato`);
+          
+          // Verifica se esiste un appuntamento associato a questo evento
+          this.db = getDatabase();
+          if (!this.db) throw new Error('Database connection failed');
+          
+          const appointment = await this.db.prepare(
+            'SELECT * FROM appointments WHERE google_calendar_event_id = ?'
+          ).get(resourceId) as Appointment | undefined;
+          
+          if (appointment) {
+            this.log('info', `Eliminazione dell'appuntamento con ID ${appointment.id} poiché l'evento è stato eliminato da Google Calendar`);
+            
+            // Elimina l'appuntamento dal database
+            await this.db.prepare('DELETE FROM appointments WHERE id = ?').run(appointment.id);
+            this.log('info', `Appuntamento con ID ${appointment.id} eliminato con successo`);
+          } else {
+            this.log('info', `Nessun appuntamento trovato associato all'evento eliminato`);
+          }
+        } else {
+          // Per altri tipi di errori, li logghiamo
+          this.log('error', `Errore durante l'aggiornamento da Google Calendar:`, error);
+        }
       }
     } catch (error) {
-      console.error(`Errore durante l'aggiornamento da Google Calendar:`, error);
+      this.log('error', `Errore durante la gestione dell'evento:`, error);
     }
   }
 
@@ -2494,6 +2552,7 @@ export class GoogleCalendarService {
 
   /**
    * Ottiene gli eventi da Google Calendar e li sincronizza con gli appuntamenti locali
+   * Rileva anche gli appuntamenti eliminati su Google Calendar e li rimuove dall'app
    */
   async syncEventsFromGoogleCalendar(): Promise<void> {
     if (!await this.isServiceEnabled()) {
@@ -2536,6 +2595,73 @@ export class GoogleCalendarService {
       
       this.log('info', `Trovati ${events.length} eventi nel calendario ${calendarId}`);
       
+      // Ottieni tutti gli appuntamenti sincronizzati con Google Calendar nel periodo specificato
+      const syncedAppointments = this.db.prepare(
+        `SELECT * FROM appointments 
+         WHERE google_calendar_event_id IS NOT NULL 
+         AND time >= ? AND time <= ?`
+      ).all(timeMin, timeMax) as Appointment[] || [];
+      
+      this.log('info', `Trovati ${syncedAppointments.length} appuntamenti sincronizzati nel database`);
+      
+      // Crea un set di ID degli eventi presenti su Google Calendar
+      const googleEventIds = new Set<string>();
+      events.forEach(event => {
+        if (event.id && event.description && event.description.toLowerCase().startsWith('<b>prenotato da')) {
+          googleEventIds.add(event.id);
+        }
+      });
+      
+      // Identifica gli appuntamenti che non esistono più su Google Calendar
+      const deletedAppointments = syncedAppointments.filter(
+        appointment => appointment.google_calendar_event_id && !googleEventIds.has(appointment.google_calendar_event_id)
+      );
+      
+      this.log('info', `Trovati ${deletedAppointments.length} appuntamenti eliminati su Google Calendar`);
+      
+      // Rimuovi gli appuntamenti eliminati su Google Calendar
+      let eventiEliminati = 0;
+      for (const appointment of deletedAppointments) {
+        try {
+          this.log('info', `Rimozione appuntamento ID: ${appointment.id} eliminato su Google Calendar`);
+          
+          // Aggiorna lo stato dell'appuntamento per indicare che è stato eliminato
+          // Utilizziamo 'failed' come sync_status invece di 'deleted_on_google' per rispettare il vincolo CHECK
+          // che permette solo i valori 'synced', 'pending', 'failed'
+          try {
+            // Esegui l'aggiornamento in una transazione per garantire l'integrità dei dati
+            this.db.prepare('BEGIN TRANSACTION').run();
+            
+            // Verifica se la colonna updated_at esiste nella tabella appointments
+            const columnInfo = this.db.prepare("PRAGMA table_info(appointments)").all() as any[];
+            const hasUpdatedAt = columnInfo.some((col: any) => col.name === 'updated_at');
+            
+            // Aggiorna lo stato dell'appuntamento con o senza updated_at a seconda della struttura della tabella
+            if (hasUpdatedAt) {
+              this.db.prepare(
+                'UPDATE appointments SET status = ?, sync_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+              ).run('cancelled', 'failed', appointment.id);
+            } else {
+              this.db.prepare(
+                'UPDATE appointments SET status = ?, sync_status = ? WHERE id = ?'
+              ).run('cancelled', 'failed', appointment.id);
+            }
+            
+            this.db.prepare('COMMIT').run();
+          } catch (updateError) {
+            // In caso di errore, esegui rollback e registra l'errore
+            this.db.prepare('ROLLBACK').run();
+            this.log('error', `Errore SQL durante l'aggiornamento dell'appuntamento ${appointment.id}`, updateError);
+            throw updateError; // Rilancia l'errore per essere gestito dal blocco catch esterno
+          }
+          
+          eventiEliminati++;
+          this.log('info', `Appuntamento ID: ${appointment.id} marcato come eliminato`);
+        } catch (deleteError) {
+          this.log('error', `Errore durante la rimozione dell'appuntamento ${appointment.id}`, deleteError);
+        }
+      }
+      
       let eventiImportati = 0;
       let eventiAggiornati = 0;
       let eventiSaltati = 0;
@@ -2547,12 +2673,20 @@ export class GoogleCalendarService {
           continue;
         }
         
-        // Non filtriamo più per event.start.dateTime, gestiamo entrambi i formati di data
+        // Verifica se l'evento ha una descrizione che inizia con "prenotato da"
+        if (!event.description || !event.description.toLowerCase().startsWith('<b>prenotato da')) {
+          this.log('info', `[DESCRIPTION] ${event.description}`);
+          this.log('info', `Evento ${event.id} ignorato: la descrizione non inizia con "prenotato da"`);
+          eventiSaltati++;
+          continue;
+        }
+        
+        this.log('info', `Elaborazione evento ${event.id} con descrizione valida`);
         
         // Verifica se l'evento esiste già nel database
-        const existingAppointment = (await this.db.prepare(
+        const existingAppointment = await this.db.prepare(
           'SELECT * FROM appointments WHERE google_calendar_event_id = ?'
-        )).get(event.id) as unknown as Appointment | undefined;
+        ).get(event.id) as unknown as Appointment | undefined;
         
         if (existingAppointment) {
           // Aggiorna l'appuntamento esistente solo se non è già sincronizzato
@@ -2583,7 +2717,7 @@ export class GoogleCalendarService {
       }
       
       // Log dettagliato dei risultati della sincronizzazione
-      this.log('info', `Sincronizzazione completata: ${eventiImportati} eventi importati, ${eventiAggiornati} eventi aggiornati, ${eventiSaltati} eventi saltati`);
+      this.log('info', `Sincronizzazione completata: ${eventiImportati} eventi importati, ${eventiAggiornati} eventi aggiornati, ${eventiSaltati} eventi saltati, ${eventiEliminati} eventi eliminati`);
       
       // Aggiorna le statistiche di sincronizzazione nelle impostazioni
       try {
@@ -2594,6 +2728,7 @@ export class GoogleCalendarService {
             importati: eventiImportati,
             aggiornati: eventiAggiornati,
             saltati: eventiSaltati,
+            eliminati: eventiEliminati,
             totale: events.length
           };
           
@@ -2605,7 +2740,30 @@ export class GoogleCalendarService {
         this.log('warn', 'Impossibile aggiornare le statistiche di sincronizzazione', statsError);
       }
     } catch (error) {
+      // Log dettagliato dell'errore di sincronizzazione
       this.log('error', 'Errore durante la sincronizzazione degli eventi da Google Calendar:', error);
+      
+      // Estrai e logga i dettagli dell'errore SQLite
+      if (error instanceof Error) {
+        this.log('error', `Dettaglio errore sincronizzazione: ${error.message}`, {
+          errorName: error.name,
+          errorStack: error.stack?.substring(0, 500),
+          errorObject: JSON.stringify(error).substring(0, 1000)
+        });
+        
+        // Verifica se l'errore è relativo a SQLite
+        if (error.message.includes('SQLITE_ERROR') || error.message.includes('SQLite')) {
+          this.log('error', 'Errore SQLite durante la sincronizzazione', {
+            errorMessage: error.message
+          });
+          
+          // Se l'errore contiene un codice, estrarlo e loggarlo
+          const codeMatch = error.message.match(/code:\s*'([^']+)'/);
+          if (codeMatch && codeMatch[1]) {
+            this.log('error', `Codice errore SQLite: ${codeMatch[1]}`);
+          }
+        }
+      }
     }
   }
 
@@ -2917,40 +3075,102 @@ export class GoogleCalendarService {
     // Determina lo stato dell'appuntamento (scheduled per default)
     const status = 'scheduled';
     
-    const stmt = this.db.prepare(
-      'INSERT INTO appointments (patient_id, date, time, notes, title, duration, google_calendar_event_id, synced, sync_status, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    );
-    const result = stmt.run(
-      patientId, 
-      date, 
-      time, 
-      //event.description || '',
-      '',
-      patientName,
-      durationMinutes,
-      event.id || null,
-      1, // già sincronizzato
-      'synced',
-      status
-    );
+    try {
+      // Log dettagliato dei parametri prima dell'inserimento
+      this.log('error', 'Tentativo di inserimento appuntamento con i seguenti parametri', {
+        patient_id: patientId,
+        date: date,
+        time: time,
+        title: patientName,
+        duration: durationMinutes,
+        google_calendar_event_id: event.id || null,
+        synced: 1,
+        sync_status: 'synced',
+        status: status
+      });
+      
+      // Verifica la struttura della tabella appointments
+      try {
+        const tableInfo = this.db.prepare("PRAGMA table_info(appointments)").all();
+        this.log('error', 'Struttura della tabella appointments', { columns: tableInfo });
+      } catch (schemaError) {
+        this.log('error', 'Errore durante il recupero della struttura della tabella', schemaError);
+      }
+      
+      const stmt = this.db.prepare(
+        'INSERT INTO appointments (patient_id, date, time, notes, title, duration, google_calendar_event_id, synced, sync_status, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      );
+      
+      const result = stmt.run(
+        patientId, 
+        date, 
+        time, 
+        '',
+        patientName,
+        durationMinutes,
+        event.id || null,
+        1, // già sincronizzato
+        'synced',
+        status
+      );
+      
+      this.log('info', 'Appuntamento inserito con successo', {
+        lastInsertRowid: result.lastInsertRowid,
+        changes: result.changes
+      });
 
-    return {
-      id: result.lastInsertRowid ? Number(result.lastInsertRowid) : 0,
-      patient_id: patientId,
-      patient_name: patientName, // per compatibilità con l'interfaccia
-      start_time: startTime.toISOString(), // Aggiungi start_time richiesto dall'interfaccia
-      end_time: endTime.toISOString(), // Aggiungi end_time richiesto dall'interfaccia
-      date: date,
-      time: time,
-      notes: '',
-      //notes: event.description || '',
-      title: patientName,
-      duration: durationMinutes,
-      google_calendar_event_id: event.id || null,
-      synced: 1,
-      sync_status: 'synced',
-      status: status
-    };
+      return {
+        id: result.lastInsertRowid ? Number(result.lastInsertRowid) : 0,
+        patient_id: patientId,
+        patient_name: patientName, // per compatibilità con l'interfaccia
+        start_time: startTime.toISOString(), // Aggiungi start_time richiesto dall'interfaccia
+        end_time: endTime.toISOString(), // Aggiungi end_time richiesto dall'interfaccia
+        date: date,
+        time: time,
+        notes: '',
+        title: patientName,
+        duration: durationMinutes,
+        google_calendar_event_id: event.id || null,
+        synced: 1,
+        sync_status: 'synced',
+        status: status
+      };
+    } catch (error) {
+      // Log dettagliato dell'errore
+      this.log('error', 'Errore durante l\'inserimento dell\'appuntamento nel database', error);
+      
+      // Estrai e logga i dettagli dell'errore SQLite
+      if (error instanceof Error) {
+        this.log('error', `Dettaglio errore SQLite: ${error.message}`, {
+          errorName: error.name,
+          errorStack: error.stack?.substring(0, 500),
+          errorObject: JSON.stringify(error).substring(0, 1000)
+        });
+        
+        // Verifica se l'errore è relativo a vincoli o colonne mancanti
+        if (error.message.includes('UNIQUE constraint failed')) {
+          this.log('error', 'Violazione di vincolo di unicità', {
+            google_calendar_event_id: event.id,
+            date: date,
+            time: time
+          });
+        } else if (error.message.includes('no such column')) {
+          this.log('error', 'Colonna mancante nella tabella appointments', {
+            errorMessage: error.message
+          });
+          
+          // Verifica la struttura della tabella appointments
+          try {
+            const tableInfo = this.db.prepare("PRAGMA table_info(appointments)").all();
+            this.log('error', 'Struttura attuale della tabella appointments', { columns: tableInfo });
+          } catch (schemaError) {
+            this.log('error', 'Impossibile ottenere la struttura della tabella', schemaError);
+          }
+        }
+      }
+      
+      throw error;
+    }
   }
 
   /**
@@ -2980,6 +3200,23 @@ export class GoogleCalendarService {
       const date = startDateTime.toISOString().split('T')[0];
       const time = startDateTime.toTimeString().split(' ')[0].substring(0, 5);
       
+      // Log dei parametri di aggiornamento
+      this.log('error', 'Tentativo di aggiornamento appuntamento con i seguenti parametri', {
+        appointmentId: appointmentId,
+        patientName: patientName,
+        date: date,
+        time: time,
+        eventId: event.id
+      });
+      
+      try {
+        // Verifica la struttura della tabella appointments
+        const tableInfo = this.db.prepare("PRAGMA table_info(appointments)").all();
+        this.log('error', 'Struttura della tabella appointments per aggiornamento', { columns: tableInfo });
+      } catch (schemaError) {
+        this.log('error', 'Errore durante il recupero della struttura della tabella per aggiornamento', schemaError);
+      }
+      
       // Aggiorna l'appuntamento
       const stmt = await this.db.prepare(`
         UPDATE appointments 
@@ -2991,7 +3228,7 @@ export class GoogleCalendarService {
         WHERE id = ?
       `);
       
-      await stmt.run(
+      const result = await stmt.run(
         patientName,
         date,
         time,
@@ -3000,9 +3237,36 @@ export class GoogleCalendarService {
         appointmentId
       );
       
-      console.log(`Appuntamento ${appointmentId} aggiornato da evento Google Calendar: ${event.id}`);
+      this.log('info', `Appuntamento ${appointmentId} aggiornato da evento Google Calendar: ${event.id}`, {
+        changes: result.changes
+      });
     } catch (error) {
-      console.error('Errore durante l\'aggiornamento dell\'appuntamento da evento Google Calendar:', error);
+      // Log dettagliato dell'errore
+      this.log('error', 'Errore durante l\'aggiornamento dell\'appuntamento da evento Google Calendar:', error);
+      
+      // Estrai e logga i dettagli dell'errore SQLite
+      if (error instanceof Error) {
+        this.log('error', `Dettaglio errore SQLite durante aggiornamento: ${error.message}`, {
+          errorName: error.name,
+          errorStack: error.stack?.substring(0, 500),
+          errorObject: JSON.stringify(error).substring(0, 1000)
+        });
+        
+        // Verifica se l'errore è relativo a vincoli o colonne mancanti
+        if (error.message.includes('no such column')) {
+          this.log('error', 'Colonna mancante nella tabella appointments durante aggiornamento', {
+            errorMessage: error.message
+          });
+          
+          // Verifica la struttura della tabella appointments
+          try {
+            const tableInfo = this.db.prepare("PRAGMA table_info(appointments)").all();
+            this.log('error', 'Struttura attuale della tabella appointments', { columns: tableInfo });
+          } catch (schemaError) {
+            this.log('error', 'Impossibile ottenere la struttura della tabella', schemaError);
+          }
+        }
+      }
     }
   }
 

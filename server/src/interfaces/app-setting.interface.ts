@@ -29,6 +29,7 @@ export interface CalendarSettings {
     importati: number;
     aggiornati: number;
     saltati: number;
+    eliminati: number;
     totale: number;
   };
 };
