@@ -16,10 +16,12 @@ import licenseRoutes from './routes/license.routes';
 import backupsRoutes from './routes/backups.routes';
 import userFilesRoutes from './routes/user-files.routes';
 import { googleCalendarRoutes } from './routes/google-calendar.routes';
-import { checkDatabaseConnection } from './config/database-sqlite';
+import { checkDatabaseConnection, getDatabase } from './config/database-sqlite';
 import { runSqliteMigrations } from './db/migrations/sqlite-migrations';
 import { GoogleCalendarService } from './services/google-calendar.service';
 import { appointmentStatusService } from './services/appointment-status.service';
+// Importo l'interfaccia Notification per risolvere gli errori TypeScript
+import { Notification } from './interfaces/notifications.interface';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -182,6 +184,92 @@ const startServer = async () => {
           console.log(`[${new Date().toISOString()}] Backup automatico completato con successo`);
         } catch (error) {
           console.error(`[${new Date().toISOString()}] Errore durante il backup automatico:`, error);
+        }
+      });
+      
+      // Configura l'elaborazione automatica delle notifiche WhatsApp in attesa
+      // Esegui l'elaborazione ogni 5 minuti
+      cron.schedule('*/5 * * * *', async () => {
+        console.log(`[${new Date().toISOString()}] Avvio elaborazione automatica delle notifiche WhatsApp in attesa`);
+        try {
+          // Ottieni il database
+          const db = getDatabase();
+          if (!db) {
+            throw new Error('Database non disponibile');
+          }
+          
+          // Recupera tutte le notifiche in attesa
+          const pendingNotifications = db.prepare(`
+            SELECT n.*, u.phone, u.first_name, u.last_name
+            FROM notifications n
+            JOIN users u ON n.user_id = u.id
+            WHERE n.status = 'pending'
+            ORDER BY n.created_at ASC
+          `).all() as Notification[];
+          
+          console.log(`[${new Date().toISOString()}] Trovate ${pendingNotifications.length} notifiche in attesa`);
+          
+          // Importa il servizio WhatsApp
+          const WhatsAppService = require('./services/whatsapp.service').default;
+          
+          // Elabora ogni notifica
+          let successCount = 0;
+          let failCount = 0;
+          
+          for (const notification of pendingNotifications) {
+            // Applico un type casting esplicito per risolvere gli errori TypeScript
+            const typedNotification = notification as Notification;
+            try {
+              // Verifica che l'utente abbia un numero di telefono
+              if (!typedNotification.phone) {
+                throw new Error(`L'utente ${typedNotification.user_id} non ha un numero di telefono valido`);
+              }
+              
+              // Invia la notifica WhatsApp
+              const success = await WhatsAppService.sendMessage(typedNotification.phone, typedNotification.message);
+              
+              if (success) {
+                // Aggiorna lo stato della notifica a 'sent'
+                db.prepare(`
+                  UPDATE notifications SET
+                    status = 'sent',
+                    error_message = NULL,
+                    updated_at = datetime('now')
+                  WHERE id = ?
+                `).run(typedNotification.id);
+                
+                successCount++;
+              } else {
+                // Aggiorna lo stato della notifica a 'failed'
+                db.prepare(`
+                  UPDATE notifications SET
+                    status = 'failed',
+                    error_message = 'Invio fallito',
+                    updated_at = datetime('now')
+                  WHERE id = ?
+                `).run(typedNotification.id);
+                
+                failCount++;
+              }
+            } catch (error) {
+              console.error(`[${new Date().toISOString()}] Errore durante l'elaborazione della notifica ${typedNotification.id}:`, error);
+              
+              // Aggiorna lo stato della notifica a 'failed'
+              db.prepare(`
+                UPDATE notifications SET
+                  status = 'failed',
+                  error_message = ?,
+                  updated_at = datetime('now')
+                WHERE id = ?
+              `).run(error instanceof Error ? error.message : 'Errore sconosciuto', notification.id);
+              
+              failCount++;
+            }
+          }
+          
+          console.log(`[${new Date().toISOString()}] Elaborazione notifiche completata: ${successCount} inviate con successo, ${failCount} fallite`);
+        } catch (error) {
+          console.error(`[${new Date().toISOString()}] Errore durante l'elaborazione automatica delle notifiche:`, error);
         }
       });
     } catch (error) {
