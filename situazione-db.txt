@@ -17,10 +17,39 @@ Colonne:
 - birth_city_code: VARCHAR(10)
 - birth_city: TEXT
 
-Tabella: app_settings
+Tabella: sqlite_sequence
 Colonne:
-- key: TEXT (PRIMARY KEY)
-- value: TEXT
+- name: 
+- seq: 
+
+Tabella: notification_templates
+Colonne:
+- id: INTEGER (PRIMARY KEY)
+- name: TEXT
+- type: TEXT
+- content: TEXT
+- description: TEXT
+- is_system: INTEGER
+- created_at: TEXT
+- updated_at: TEXT
+
+Tabella: notifications
+Colonne:
+- id: INTEGER (PRIMARY KEY)
+- user_id: INTEGER
+- message: TEXT
+- status: TEXT
+- error_message: TEXT
+- template_id: INTEGER
+- appointment_id: INTEGER
+- created_at: TEXT
+- updated_at: TEXT
+
+Tabella: appointment_types
+Colonne:
+- id: INTEGER (PRIMARY KEY)
+- name: TEXT
+- description: TEXT
 - created_at: TEXT
 - updated_at: TEXT
 
@@ -31,23 +60,29 @@ Colonne:
 - codice: TEXT
 - provincia: TEXT
 
-Tabella: appointment_types
+Tabella: appointments_temp
 Colonne:
 - id: INTEGER (PRIMARY KEY)
-- name: TEXT
-- description: TEXT
-- created_at: TEXT
-- updated_at: TEXT
+- date: TEXT
+- time: TEXT
+- patient: TEXT
+- notes: TEXT
+- calendar_id: TEXT
+- last_sync_time: TEXT
+- sync_error: TEXT
 
-Tabella: licenses
+Tabella: user_files
 Colonne:
-- id: TEXT (PRIMARY KEY)
-- key: TEXT
-- expiration_date: TEXT
-- features: TEXT
-- active: INTEGER
-- created_at: TEXT
-- updated_at: TEXT
+- id: INTEGER (PRIMARY KEY)
+- user_id: INTEGER
+- file_name: TEXT
+- original_name: TEXT
+- file_path: TEXT
+- file_type: TEXT
+- file_size: INTEGER
+- description: TEXT
+- created_at: TIMESTAMP
+- updated_at: TIMESTAMP
 
 Tabella: appointments
 Colonne:
@@ -68,42 +103,20 @@ Colonne:
 - google_event_id: TEXT
 - sync_status: TEXT
 
-Tabella: appointments_temp
+Tabella: licenses
 Colonne:
-- id: INTEGER (PRIMARY KEY)
-- date: TEXT
-- time: TEXT
-- patient: TEXT
-- notes: TEXT
-- calendar_id: TEXT
-- last_sync_time: TEXT
-- sync_error: TEXT
-
-Tabella: notifications
-Colonne:
-- id: INTEGER (PRIMARY KEY)
-- user_id: INTEGER
-- message: TEXT
-- status: TEXT
-- error_message: TEXT
-- template_id: INTEGER
-- appointment_id: INTEGER
+- id: TEXT (PRIMARY KEY)
+- key: TEXT
+- expiration_date: TEXT
+- features: TEXT
+- active: INTEGER
 - created_at: TEXT
 - updated_at: TEXT
 
-Tabella: sqlite_sequence
+Tabella: app_settings
 Colonne:
-- name: 
-- seq: 
-
-Tabella: notification_templates
-Colonne:
-- id: INTEGER (PRIMARY KEY)
-- name: TEXT
-- type: TEXT
-- content: TEXT
-- description: TEXT
-- is_system: INTEGER
+- key: TEXT (PRIMARY KEY)
+- value: TEXT
 - created_at: TEXT
 - updated_at: TEXT
 

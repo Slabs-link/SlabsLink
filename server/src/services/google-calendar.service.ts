@@ -13,6 +13,7 @@ export class GoogleCalendarService {
   private calendar: calendar_v3.Calendar | null = null;
   private webhookUrl: string | null = null;
   private notificationChannel: string | null = '';
+  private cancelledEventIds: Set<string> = new Set<string>();
   
   /**
    * Getter protetto per accedere al calendario
@@ -50,7 +51,7 @@ export class GoogleCalendarService {
     // e filtra anche i log relativi alle query di database a meno che non siano errori
     if ((level === 'error') || 
         (level === 'warn' && !isDatabaseQuery) || 
-        (level === 'info' && isAuthRelated && !isDatabaseQuery)) {
+        (level === 'info' && !isDatabaseQuery)) {
       const timestamp = new Date().toISOString();
       const prefix = `[GoogleCalendarService][${timestamp}][${level.toUpperCase()}]`;
       
@@ -1252,25 +1253,48 @@ export class GoogleCalendarService {
     }
 
     // Otteniamo le impostazioni del calendario
-    const settings = await this.getCalendarSettings();
+    let settings;
+    try {
+      settings = await this.getCalendarSettings();
+      this.log('info', 'Impostazioni del calendario recuperate', {
+        hasSettings: !!settings,
+        hasSelectedCalendarId: !!settings?.selectedCalendarId,
+        selectedCalendarId: settings?.selectedCalendarId || 'non impostato'
+      });
+    } catch (settingsError) {
+      this.log('error', 'Errore durante il recupero delle impostazioni del calendario', settingsError);
+      throw new Error(`Errore durante il recupero delle impostazioni: ${settingsError instanceof Error ? settingsError.message : 'Errore sconosciuto'}`);
+    }
+    
     // Usiamo il calendario primario come default
     let calendarId = 'primary';
     let usingFallback = false;
     
     // Se nelle impostazioni è specificato un calendario specifico, lo usiamo
     if (settings?.selectedCalendarId) {
+      this.log('info', `Tentativo di utilizzo del calendario selezionato: ${settings.selectedCalendarId}`);
       // Verifichiamo se il calendario selezionato esiste
-      const calendarExists = await this.verifyCalendarExists(settings.selectedCalendarId);
-      
-      if (calendarExists) {
-        calendarId = settings.selectedCalendarId;
-        this.log('info', `Utilizzo calendario selezionato con ID: ${calendarId}`);
-      } else {
-        // Se il calendario non esiste, utilizziamo il calendario primario come fallback
-        this.log('warn', `Calendario selezionato con ID: ${settings.selectedCalendarId} non trovato, utilizzo calendario primario come fallback`);
+      try {
+        const calendarExists = await this.verifyCalendarExists(settings.selectedCalendarId);
+        this.log('info', `Verifica esistenza calendario ${settings.selectedCalendarId}: ${calendarExists ? 'esistente' : 'non esistente'}`);
+        
+        if (calendarExists) {
+          calendarId = settings.selectedCalendarId;
+          this.log('info', `Utilizzo calendario selezionato con ID: ${calendarId}`);
+        } else {
+          // Se il calendario non esiste, utilizziamo il calendario primario come fallback
+          this.log('warn', `Calendario selezionato con ID: ${settings.selectedCalendarId} non trovato, utilizzo calendario primario come fallback`);
+          calendarId = 'primary';
+          usingFallback = true;
+        }
+      } catch (verifyError) {
+        this.log('error', `Errore durante la verifica dell'esistenza del calendario ${settings.selectedCalendarId}`, verifyError);
+        this.log('warn', 'Utilizzo calendario primario come fallback a causa dell\'errore');
         calendarId = 'primary';
         usingFallback = true;
       }
+    } else {
+      this.log('info', 'Nessun calendario selezionato nelle impostazioni, utilizzo calendario primario');
     }
 
     // Assicuriamoci che il nome del paziente sia disponibile
@@ -1385,25 +1409,48 @@ export class GoogleCalendarService {
     }
 
     // Otteniamo le impostazioni del calendario
-    const settings = await this.getCalendarSettings();
+    let settings;
+    try {
+      settings = await this.getCalendarSettings();
+      this.log('info', 'Impostazioni del calendario recuperate', {
+        hasSettings: !!settings,
+        hasSelectedCalendarId: !!settings?.selectedCalendarId,
+        selectedCalendarId: settings?.selectedCalendarId || 'non impostato'
+      });
+    } catch (settingsError) {
+      this.log('error', 'Errore durante il recupero delle impostazioni del calendario', settingsError);
+      throw new Error(`Errore durante il recupero delle impostazioni: ${settingsError instanceof Error ? settingsError.message : 'Errore sconosciuto'}`);
+    }
+    
     // Usiamo il calendario primario come default
     let calendarId = 'primary';
     let usingFallback = false;
     
     // Se nelle impostazioni è specificato un calendario specifico, lo usiamo
     if (settings?.selectedCalendarId) {
+      this.log('info', `Tentativo di utilizzo del calendario selezionato: ${settings.selectedCalendarId}`);
       // Verifichiamo se il calendario selezionato esiste
-      const calendarExists = await this.verifyCalendarExists(settings.selectedCalendarId);
-      
-      if (calendarExists) {
-        calendarId = settings.selectedCalendarId;
-        this.log('info', `Utilizzo calendario selezionato con ID: ${calendarId}`);
-      } else {
-        // Se il calendario non esiste, utilizziamo il calendario primario come fallback
-        this.log('warn', `Calendario selezionato con ID: ${settings.selectedCalendarId} non trovato, utilizzo calendario primario come fallback`);
+      try {
+        const calendarExists = await this.verifyCalendarExists(settings.selectedCalendarId);
+        this.log('info', `Verifica esistenza calendario ${settings.selectedCalendarId}: ${calendarExists ? 'esistente' : 'non esistente'}`);
+        
+        if (calendarExists) {
+          calendarId = settings.selectedCalendarId;
+          this.log('info', `Utilizzo calendario selezionato con ID: ${calendarId}`);
+        } else {
+          // Se il calendario non esiste, utilizziamo il calendario primario come fallback
+          this.log('warn', `Calendario selezionato con ID: ${settings.selectedCalendarId} non trovato, utilizzo calendario primario come fallback`);
+          calendarId = 'primary';
+          usingFallback = true;
+        }
+      } catch (verifyError) {
+        this.log('error', `Errore durante la verifica dell'esistenza del calendario ${settings.selectedCalendarId}`, verifyError);
+        this.log('warn', 'Utilizzo calendario primario come fallback a causa dell\'errore');
         calendarId = 'primary';
         usingFallback = true;
       }
+    } else {
+      this.log('info', 'Nessun calendario selezionato nelle impostazioni, utilizzo calendario primario');
     }
 
     // Formatta il titolo dell'evento includendo il titolo dell'appuntamento e il nome del paziente
@@ -1876,13 +1923,12 @@ export class GoogleCalendarService {
             appointment.id
           );
         } else if (this.notificationChannel) {
-          this.log('info', `[DESCRIPTION] ${event.description}`);
           // Crea un nuovo appuntamento solo se la descrizione inizia con "prenotato da"
-          if (event.description && event.description.toLowerCase().startsWith('prenotato da')) {
+          if (event.description && event.description.toLowerCase().startsWith('<b>prenotato da')) {
             this.log('info', `Creazione nuovo appuntamento da evento con descrizione valida`);
             await this.createAppointmentInDatabase(event);
           } else {
-            this.log('info', `Evento ignorato: la descrizione non inizia con "prenotato da"`);
+            this.log('info', `Evento ignorato: la descrizione non inizia con "<b>prenotato da"`);
           }
         }
       } catch (error: any) {
@@ -1903,9 +1949,55 @@ export class GoogleCalendarService {
           if (appointment) {
             this.log('info', `Eliminazione dell'appuntamento con ID ${appointment.id} poiché l'evento è stato eliminato da Google Calendar`);
             
-            // Elimina l'appuntamento dal database
-            await this.db.prepare('DELETE FROM appointments WHERE id = ?').run(appointment.id);
-            this.log('info', `Appuntamento con ID ${appointment.id} eliminato con successo`);
+            try {
+              // Esegui l'eliminazione in una transazione per garantire l'integrità dei dati
+              this.log('info', `Inizio transazione per eliminazione appuntamento ${appointment.id}`);
+              this.db.prepare('BEGIN TRANSACTION').run();
+              
+              // Verifica se ci sono notifiche associate a questo appuntamento
+              const relatedNotifications = this.db.prepare('SELECT id FROM notifications WHERE appointment_id = ?').all(appointment.id);
+              
+              // Se ci sono notifiche associate, aggiorna il loro appointment_id a NULL
+              if (relatedNotifications && relatedNotifications.length > 0) {
+                this.log('info', `Trovate ${relatedNotifications.length} notifiche associate all'appuntamento ${appointment.id}`, {
+                  notificationIds: relatedNotifications.map((n: any) => n.id)
+                });
+                
+                // Aggiorna le notifiche impostando appointment_id a NULL
+                // Questo risolve il problema del vincolo di chiave esterna
+                const updateResult = this.db.prepare('UPDATE notifications SET appointment_id = NULL WHERE appointment_id = ?').run(appointment.id);
+                this.log('info', `Aggiornate ${updateResult.changes} notifiche associate all'appuntamento ${appointment.id}`);
+              } else {
+                this.log('info', `Nessuna notifica associata all'appuntamento ${appointment.id}`);
+              }
+              
+              // Elimina l'appuntamento dal database
+              this.log('info', `Tentativo di eliminazione dell'appuntamento ${appointment.id} dal database`);
+              const deleteResult = this.db.prepare('DELETE FROM appointments WHERE id = ?').run(appointment.id);
+              
+              // Verifica che l'eliminazione sia avvenuta con successo
+              if (deleteResult.changes === 0) {
+                this.log('error', `Nessuna riga modificata durante l'eliminazione dell'appuntamento ${appointment.id}`);
+                throw new Error(`Impossibile eliminare l'appuntamento con ID ${appointment.id}: nessuna riga modificata`);
+              }
+              
+              this.log('info', `Commit della transazione per l'appuntamento ${appointment.id}`);
+              this.db.prepare('COMMIT').run();
+              this.log('info', `Appuntamento ID: ${appointment.id} ${this.cancelledEventIds.has(appointment.google_calendar_event_id || '') ? 'con stato cancelled' : 'eliminato'} rimosso con successo`, {
+                deleteChanges: deleteResult.changes
+              });
+            } catch (deleteError) {
+              // In caso di errore, esegui rollback e registra l'errore
+              this.log('error', `Errore durante la transazione, esecuzione rollback per l'appuntamento ${appointment.id}`);
+              this.db.prepare('ROLLBACK').run();
+              this.log('error', `Errore SQL durante l'eliminazione dell'appuntamento ${appointment.id}`, {
+                errorMessage: deleteError instanceof Error ? deleteError.message : 'Errore sconosciuto',
+                errorStack: deleteError instanceof Error ? deleteError.stack : 'Stack non disponibile',
+                appointmentId: appointment.id,
+                googleEventId: appointment.google_calendar_event_id
+              });
+              throw deleteError; // Rilancia l'errore per essere gestito dal blocco catch esterno
+            }
           } else {
             this.log('info', `Nessun appuntamento trovato associato all'evento eliminato`);
           }
@@ -1934,48 +2026,108 @@ export class GoogleCalendarService {
   async deleteCalendarEvent(eventId: string): Promise<void> {
     this.log('info', `Tentativo di eliminazione evento Google Calendar con ID: ${eventId}`);
     
+    // Verifica se l'ID dell'evento è valido
+    if (!eventId) {
+      this.log('error', 'Impossibile eliminare evento: ID evento non valido o mancante');
+      throw new Error('ID evento non valido o mancante');
+    }
+    
+    // Verifica se il client del calendario è inizializzato
     if (!this.calendar) {
       this.log('info', 'Client Google Calendar non inizializzato, tentativo di configurazione');
-      await this.configure();
+      try {
+        await this.configure();
+        this.log('info', 'Configurazione del client Google Calendar completata');
+      } catch (configError) {
+        this.log('error', 'Errore durante la configurazione del client Google Calendar', configError);
+        throw new Error(`Errore durante la configurazione: ${configError instanceof Error ? configError.message : 'Errore sconosciuto'}`);
+      }
     }
     
     if (!this.calendar) {
       this.log('error', 'Google Calendar service non autenticato dopo tentativo di configurazione');
       throw new Error('Google Calendar service non autenticato');
     }
+    
+    this.log('info', `Client Google Calendar inizializzato correttamente per eliminazione evento ${eventId}`);
+  
 
     // Otteniamo le impostazioni del calendario
-    const settings = await this.getCalendarSettings();
+    let settings;
+    try {
+      settings = await this.getCalendarSettings();
+      this.log('info', 'Impostazioni del calendario recuperate', {
+        hasSettings: !!settings,
+        hasSelectedCalendarId: !!settings?.selectedCalendarId,
+        selectedCalendarId: settings?.selectedCalendarId || 'non impostato'
+      });
+    } catch (settingsError) {
+      this.log('error', 'Errore durante il recupero delle impostazioni del calendario', settingsError);
+      throw new Error(`Errore durante il recupero delle impostazioni: ${settingsError instanceof Error ? settingsError.message : 'Errore sconosciuto'}`);
+    }
+    
     // Usiamo il calendario primario come default
     let calendarId = 'primary';
     let usingFallback = false;
     
     // Se nelle impostazioni è specificato un calendario specifico, lo usiamo
     if (settings?.selectedCalendarId) {
+      this.log('info', `Tentativo di utilizzo del calendario selezionato: ${settings.selectedCalendarId}`);
       // Verifichiamo se il calendario selezionato esiste
-      const calendarExists = await this.verifyCalendarExists(settings.selectedCalendarId);
-      
-      if (calendarExists) {
-        calendarId = settings.selectedCalendarId;
-        this.log('info', `Utilizzo calendario selezionato con ID: ${calendarId}`);
-      } else {
-        // Se il calendario non esiste, utilizziamo il calendario primario come fallback
-        this.log('warn', `Calendario selezionato con ID: ${settings.selectedCalendarId} non trovato, utilizzo calendario primario come fallback`);
+      try {
+        const calendarExists = await this.verifyCalendarExists(settings.selectedCalendarId);
+        this.log('info', `Verifica esistenza calendario ${settings.selectedCalendarId}: ${calendarExists ? 'esistente' : 'non esistente'}`);
+        
+        if (calendarExists) {
+          calendarId = settings.selectedCalendarId;
+          this.log('info', `Utilizzo calendario selezionato con ID: ${calendarId}`);
+        } else {
+          // Se il calendario non esiste, utilizziamo il calendario primario come fallback
+          this.log('warn', `Calendario selezionato con ID: ${settings.selectedCalendarId} non trovato, utilizzo calendario primario come fallback`);
+          calendarId = 'primary';
+          usingFallback = true;
+        }
+      } catch (verifyError) {
+        this.log('error', `Errore durante la verifica dell'esistenza del calendario ${settings.selectedCalendarId}`, verifyError);
+        this.log('warn', 'Utilizzo calendario primario come fallback a causa dell\'errore');
         calendarId = 'primary';
         usingFallback = true;
       }
+    } else {
+      this.log('info', 'Nessun calendario selezionato nelle impostazioni, utilizzo calendario primario');
     }
 
     try {
       // Prima verifichiamo se l'evento esiste
-      this.log('info', `Verifica esistenza evento con ID: ${eventId}`);
+      this.log('info', `Verifica esistenza evento con ID: ${eventId} nel calendario ${calendarId}`);
       try {
-        await this.calendar.events.get({
+        const eventResponse = await this.calendar.events.get({
           calendarId: calendarId,
           eventId: eventId
         });
-        this.log('info', `Evento con ID ${eventId} trovato, procedo con l'eliminazione`);
+        
+        // Log dettagliato dell'evento trovato
+        this.log('info', `Evento con ID ${eventId} trovato nel calendario ${calendarId}`, {
+          eventSummary: eventResponse.data.summary,
+          eventStatus: eventResponse.data.status,
+          eventCreated: eventResponse.data.created,
+          eventUpdated: eventResponse.data.updated,
+          hasStart: !!eventResponse.data.start,
+          hasEnd: !!eventResponse.data.end,
+          startDateTime: eventResponse.data.start?.dateTime,
+          endDateTime: eventResponse.data.end?.dateTime
+        });
+        
+        this.log('info', `Procedo con l'eliminazione dell'evento ${eventId} dal calendario ${calendarId}`);
       } catch (getError: any) {
+        // Log dettagliato dell'errore
+        this.log('warn', `Errore durante la verifica dell'esistenza dell'evento ${eventId}`, {
+          errorStatus: getError?.response?.status,
+          errorMessage: getError?.message,
+          errorReason: getError?.errors?.[0]?.reason,
+          calendarId: calendarId
+        });
+        
         // Se l'evento non esiste (404) e non stiamo usando il calendario primario, proviamo con quello
         if ((getError?.response?.status === 404 || 
             (getError?.errors && getError.errors[0]?.reason === 'notFound')) && 
@@ -1984,14 +2136,34 @@ export class GoogleCalendarService {
           this.log('warn', `Evento con ID ${eventId} non trovato nel calendario ${calendarId}, tentativo con calendario primario`);
           
           try {
-            await this.calendar.events.get({
+            const primaryEventResponse = await this.calendar.events.get({
               calendarId: 'primary',
               eventId: eventId
             });
-            this.log('info', `Evento con ID ${eventId} trovato nel calendario primario, procedo con l'eliminazione`);
+            
+            // Log dettagliato dell'evento trovato nel calendario primario
+            this.log('info', `Evento con ID ${eventId} trovato nel calendario primario`, {
+              eventSummary: primaryEventResponse.data.summary,
+              eventStatus: primaryEventResponse.data.status,
+              eventCreated: primaryEventResponse.data.created,
+              eventUpdated: primaryEventResponse.data.updated,
+              hasStart: !!primaryEventResponse.data.start,
+              hasEnd: !!primaryEventResponse.data.end,
+              startDateTime: primaryEventResponse.data.start?.dateTime,
+              endDateTime: primaryEventResponse.data.end?.dateTime
+            });
+            
+            this.log('info', `Procedo con l'eliminazione dell'evento ${eventId} dal calendario primario`);
             calendarId = 'primary';
             usingFallback = true;
           } catch (primaryGetError: any) {
+            // Log dettagliato dell'errore nel calendario primario
+            this.log('warn', `Errore durante la verifica dell'esistenza dell'evento ${eventId} nel calendario primario`, {
+              errorStatus: primaryGetError?.response?.status,
+              errorMessage: primaryGetError?.message,
+              errorReason: primaryGetError?.errors?.[0]?.reason
+            });
+            
             // Se l'evento non esiste neanche nel calendario primario, consideriamo l'operazione come completata
             if (primaryGetError?.response?.status === 404 || 
                 (primaryGetError?.errors && primaryGetError.errors[0]?.reason === 'notFound')) {
@@ -1999,7 +2171,9 @@ export class GoogleCalendarService {
               return; // Usciamo dalla funzione senza errori
             }
             // Per altri errori, li logghiamo e continuiamo con il tentativo di eliminazione
-            this.log('warn', `Errore durante la verifica dell'esistenza dell'evento nel calendario primario: ${primaryGetError?.message || 'Errore sconosciuto'}`);
+            this.log('warn', `Errore durante la verifica dell'esistenza dell'evento nel calendario primario: ${primaryGetError?.message || 'Errore sconosciuto'}`, {
+              errorDetails: primaryGetError?.errors || 'Nessun dettaglio disponibile'
+            });
           }
         } else if (getError?.response?.status === 404 || 
                    (getError?.errors && getError.errors[0]?.reason === 'notFound')) {
@@ -2008,15 +2182,35 @@ export class GoogleCalendarService {
           return; // Usciamo dalla funzione senza errori
         }
         // Per altri errori, li logghiamo e continuiamo con il tentativo di eliminazione
-        this.log('warn', `Errore durante la verifica dell'esistenza dell'evento: ${getError?.message || 'Errore sconosciuto'}`);
+        this.log('warn', `Errore durante la verifica dell'esistenza dell'evento: ${getError?.message || 'Errore sconosciuto'}`, {
+          errorDetails: getError?.errors || 'Nessun dettaglio disponibile'
+        });
       }
 
       // Procediamo con l'eliminazione
-      await this.calendar.events.delete({
-        calendarId: calendarId,
-        eventId: eventId
-      });
-      this.log('info', `Evento con ID ${eventId} eliminato con successo`);
+      this.log('info', `Tentativo di eliminazione dell'evento ${eventId} dal calendario ${calendarId}`);
+      try {
+        const deleteResponse = await this.calendar.events.delete({
+          calendarId: calendarId,
+          eventId: eventId
+        });
+        
+        // Log dettagliato della risposta di eliminazione
+        this.log('info', `Evento con ID ${eventId} eliminato con successo dal calendario ${calendarId}`, {
+          responseStatus: deleteResponse.status,
+          responseStatusText: deleteResponse.statusText,
+          responseHeaders: deleteResponse.headers
+        });
+      } catch (deleteError: any) {
+        // Log dettagliato dell'errore di eliminazione
+        this.log('error', `Errore durante l'eliminazione dell'evento ${eventId} dal calendario ${calendarId}`, {
+          errorStatus: deleteError?.response?.status,
+          errorMessage: deleteError?.message,
+          errorReason: deleteError?.errors?.[0]?.reason,
+          errorDetails: deleteError?.errors || 'Nessun dettaglio disponibile'
+        });
+        throw deleteError; // Rilancia l'errore per essere gestito dal blocco catch esterno
+      }
       
       // Se abbiamo usato il fallback, aggiorniamo le impostazioni per evitare futuri errori
       if (usingFallback && settings) {
@@ -2109,6 +2303,15 @@ export class GoogleCalendarService {
     if (!await this.isServiceAuthenticated()) {
       this.log('warn', 'Sincronizzazione non eseguita: servizio Google Calendar non autenticato');
       return [{id: 0, success: false, message: 'Servizio Google Calendar non autenticato'}];
+    }
+
+    // Prima verifichiamo se ci sono appuntamenti nel DB che sono stati eliminati da Google Calendar
+    try {
+      this.log('info', 'Verifica appuntamenti eliminati da Google Calendar');
+      await this.checkDeletedEventsFromGoogleCalendar();
+    } catch (error) {
+      this.log('error', 'Errore durante la verifica degli appuntamenti eliminati da Google Calendar', error);
+      // Continuiamo con la sincronizzazione anche se questa verifica fallisce
     }
 
     const unsyncedAppointments = await this.getUnsyncedAppointments();
@@ -2551,6 +2754,363 @@ export class GoogleCalendarService {
   }
 
   /**
+   * Verifica se ci sono appuntamenti nel DB che sono stati eliminati da Google Calendar
+   * e li rimuove dal database locale
+   */
+  async checkDeletedEventsFromGoogleCalendar(): Promise<void> {
+    // Log di inizio funzione
+    console.log(`[DEBUG][${new Date().toISOString()}] INIZIO checkDeletedEventsFromGoogleCalendar`);
+    
+    if (!await this.isServiceEnabled()) {
+      console.log(`[DEBUG][${new Date().toISOString()}] Servizio Google Calendar non abilitato, uscita dalla funzione`);
+      return;
+    }
+
+    try {
+      console.log(`[DEBUG][${new Date().toISOString()}] Verifica configurazione client Google Calendar`);
+      if (!this.calendar) {
+        console.log(`[DEBUG][${new Date().toISOString()}] Client Google Calendar non configurato, tentativo di configurazione`);
+        await this.configure();
+      }
+      
+      if (!this.calendar) {
+        console.log(`[DEBUG][${new Date().toISOString()}] ERRORE: Client Google Calendar non configurato dopo tentativo di configurazione`);
+        throw new Error('Google Calendar service non autenticato');
+      }
+      
+      console.log(`[DEBUG][${new Date().toISOString()}] Connessione al database`);
+      this.db = getDatabase();
+      if (!this.db) {
+        console.log(`[DEBUG][${new Date().toISOString()}] ERRORE: Connessione al database fallita`);
+        throw new Error('Database connection failed');
+      }
+      
+      // Ottieni le impostazioni del calendario per determinare quali calendari utilizzare
+      console.log(`[DEBUG][${new Date().toISOString()}] Recupero impostazioni del calendario`);
+      const settings = await this.getCalendarSettings();
+      
+      // Determina quali calendari utilizzare
+      let calendarIds: string[] = [];
+      
+      // Usa i calendari selezionati nelle impostazioni, se disponibili
+      if (settings?.selectedCalendarIds && settings.selectedCalendarIds.length > 0) {
+        calendarIds = settings.selectedCalendarIds;
+        console.log(`[DEBUG][${new Date().toISOString()}] Utilizzo di ${calendarIds.length} calendari selezionati: ${calendarIds.join(', ')}`);
+        this.log('info', `Verifica appuntamenti eliminati da ${calendarIds.length} calendari: ${calendarIds.join(', ')}`);
+      } 
+      // Altrimenti, usa il calendario singolo selezionato (retrocompatibilità)
+      else if (settings?.selectedCalendarId) {
+        calendarIds = [settings.selectedCalendarId];
+        console.log(`[DEBUG][${new Date().toISOString()}] Utilizzo del calendario selezionato: ${settings.selectedCalendarId}`);
+        this.log('info', `Verifica appuntamenti eliminati dal calendario: ${settings.selectedCalendarId}`);
+      } 
+      // Se non ci sono calendari selezionati, usa 'primary'
+      else {
+        calendarIds = ['primary'];
+        console.log(`[DEBUG][${new Date().toISOString()}] Nessun calendario selezionato, utilizzo del calendario primario`);
+        this.log('info', `Verifica appuntamenti eliminati dal calendario primario`);
+      }
+      
+      // Ottieni tutti gli appuntamenti sincronizzati con Google Calendar
+      console.log(`[DEBUG][${new Date().toISOString()}] Recupero appuntamenti sincronizzati dal database`);
+      const syncedAppointments = this.db.prepare(
+        `SELECT * FROM appointments 
+         WHERE google_calendar_event_id IS NOT NULL`
+      ).all() as Appointment[] || [];
+      
+      console.log(`[DEBUG][${new Date().toISOString()}] Trovati ${syncedAppointments.length} appuntamenti sincronizzati nel database`);
+      if (syncedAppointments.length > 0) {
+        console.log(`[DEBUG][${new Date().toISOString()}] Primi 5 appuntamenti sincronizzati:`, 
+          syncedAppointments.slice(0, 5).map(a => ({ 
+            id: a.id, 
+            google_id: a.google_calendar_event_id, 
+            patient: a.patient_name 
+          })));
+      }
+      
+      this.log('info', `Trovati ${syncedAppointments.length} appuntamenti sincronizzati nel database`);
+      
+      if (syncedAppointments.length === 0) {
+        console.log(`[DEBUG][${new Date().toISOString()}] Nessun appuntamento sincronizzato da verificare, uscita dalla funzione`);
+        this.log('info', 'Nessun appuntamento sincronizzato da verificare');
+        return;
+      }
+      
+      // Raggruppa gli ID degli eventi di Google Calendar in batch di 50 per evitare richieste troppo grandi
+      const batchSize = 50;
+      const batches = [];
+      for (let i = 0; i < syncedAppointments.length; i += batchSize) {
+        batches.push(syncedAppointments.slice(i, i + batchSize));
+      }
+      
+      console.log(`[DEBUG][${new Date().toISOString()}] Suddivisi ${syncedAppointments.length} appuntamenti in ${batches.length} batch`);
+      this.log('info', `Suddivisi ${syncedAppointments.length} appuntamenti in ${batches.length} batch`);
+      
+      // Crea un set di ID degli eventi presenti su Google Calendar
+      const googleEventIds = new Set<string>();
+      // Resetta e utilizza il set di ID degli eventi cancellati su Google Calendar (status=cancelled)
+      this.cancelledEventIds.clear();
+      
+      console.log(`[DEBUG][${new Date().toISOString()}] Inizio verifica eventi su Google Calendar per ${calendarIds.length} calendari`);
+      this.log('info', 'Verifica anche eventi con stato "cancelled" su Google Calendar');
+      // Per ogni batch, verifica quali eventi esistono ancora su Google Calendar
+      for (const batch of batches) {
+        const batchEventIds = batch.map(a => a.google_calendar_event_id).filter(id => id !== null) as string[];
+        
+        console.log(`[DEBUG][${new Date().toISOString()}] Verifica batch di ${batchEventIds.length} eventi`);
+        if (batchEventIds.length > 0) {
+          console.log(`[DEBUG][${new Date().toISOString()}] Primi 5 ID eventi del batch:`, batchEventIds.slice(0, 5));
+        }
+        
+        this.log('info', `Verifica batch di ${batchEventIds.length} eventi`);
+        
+        // Verifica ogni evento individualmente su tutti i calendari selezionati
+        for (const eventId of batchEventIds) {
+          console.log(`[DEBUG][${new Date().toISOString()}] Verifica esistenza evento ${eventId} su Google Calendar`);
+          
+          let eventFound = false;
+          
+          // Verifica l'evento su tutti i calendari selezionati
+          for (const calendarId of calendarIds) {
+            if (eventFound) {
+              // Se l'evento è già stato trovato in un altro calendario, salta la verifica
+              continue;
+            }
+            
+            try {
+              console.log(`[DEBUG][${new Date().toISOString()}] Richiesta GET per evento ${eventId} sul calendario ${calendarId}`);
+              const response = await this.calendar.events.get({
+                calendarId: calendarId,
+                eventId: eventId
+              });
+              
+              // Se non genera errore, l'evento esiste ancora
+              console.log(`[DEBUG][${new Date().toISOString()}] Evento ${eventId} trovato su Google Calendar nel calendario ${calendarId}`, {
+                eventSummary: response.data.summary,
+                eventStatus: response.data.status
+              });
+              
+              // Controlla se l'evento è stato cancellato (status=cancelled)
+              if (response.data.status === 'cancelled') {
+                console.log(`[DEBUG][${new Date().toISOString()}] Evento ${eventId} trovato ma con stato 'cancelled'`);
+                this.cancelledEventIds.add(eventId);
+              } else {
+                googleEventIds.add(eventId);
+              }
+              eventFound = true;
+            } catch (error: any) {
+              // Se otteniamo un 404, l'evento non esiste in questo calendario, ma potrebbe esistere in un altro
+              if (error?.response?.status === 404 || 
+                  (error?.errors && error.errors[0]?.reason === 'notFound')) {
+                console.log(`[DEBUG][${new Date().toISOString()}] Evento ${eventId} NON trovato sul calendario ${calendarId} (404)`);
+                // Non aggiungiamo l'ID al set qui, lo faremo solo se non viene trovato in nessun calendario
+              } else {
+                // Per altri errori, consideriamo l'evento come esistente per sicurezza
+                console.log(`[DEBUG][${new Date().toISOString()}] Errore durante la verifica dell'evento ${eventId} sul calendario ${calendarId}:`, {
+                  errorStatus: error?.response?.status,
+                  errorMessage: error?.message,
+                  errorReason: error?.errors?.[0]?.reason
+                });
+                this.log('warn', `Errore durante la verifica dell'evento ${eventId} sul calendario ${calendarId}`, error);
+                googleEventIds.add(eventId);
+                eventFound = true;
+              }
+            }
+          }
+          
+          // Se l'evento non è stato trovato in nessun calendario, logga l'informazione
+          if (!eventFound) {
+            this.log('info', `Evento con ID ${eventId} non trovato in nessuno dei calendari selezionati`);
+          }
+        }
+      }
+      
+      console.log(`[DEBUG][${new Date().toISOString()}] Trovati ${googleEventIds.size} eventi esistenti su Google Calendar`);
+      
+      // Identifica gli appuntamenti che non esistono più su Google Calendar o sono stati cancellati (status=cancelled)
+      const deletedAppointments = syncedAppointments.filter(
+        appointment => appointment.google_calendar_event_id && 
+          (!googleEventIds.has(appointment.google_calendar_event_id) || 
+           this.cancelledEventIds.has(appointment.google_calendar_event_id))
+      );
+      
+      // Log degli eventi cancellati
+      if (this.cancelledEventIds.size > 0) {
+        console.log(`[DEBUG][${new Date().toISOString()}] Trovati ${this.cancelledEventIds.size} eventi con stato 'cancelled' su Google Calendar`);
+        this.log('info', `Trovati ${this.cancelledEventIds.size} eventi con stato 'cancelled' su Google Calendar`);
+      }
+      
+      
+      console.log(`[DEBUG][${new Date().toISOString()}] Identificati ${deletedAppointments.length} appuntamenti da eliminare (eliminati o con stato 'cancelled' su Google Calendar)`);
+      if (deletedAppointments.length > 0) {
+        console.log(`[DEBUG][${new Date().toISOString()}] Dettagli appuntamenti da eliminare:`, 
+          deletedAppointments.map(a => ({
+            id: a.id,
+            google_id: a.google_calendar_event_id,
+            patient: a.patient_name,
+            date: a.date,
+            time: a.time
+          })));
+      }
+      
+      this.log('info', `Trovati ${deletedAppointments.length} appuntamenti da eliminare (eliminati o con stato 'cancelled' su Google Calendar)`, {
+        deletedAppointmentIds: deletedAppointments.map(a => a.id),
+        deletedGoogleEventIds: deletedAppointments.map(a => a.google_calendar_event_id),
+        cancelledEventsCount: this.cancelledEventIds.size
+      });
+      
+      // Rimuovi gli appuntamenti eliminati su Google Calendar
+      let eventiEliminati = 0;
+      for (const appointment of deletedAppointments) {
+        console.log(`[DEBUG][${new Date().toISOString()}] Elaborazione appuntamento ${appointment.id} per eliminazione`);
+        try {
+          // Verifica se l'appuntamento è stato cancellato (status=cancelled) o è stato eliminato completamente
+          const isCancelled = this.cancelledEventIds.has(appointment.google_calendar_event_id || '');
+          this.log('info', `Rimozione appuntamento ID: ${appointment.id} ${isCancelled ? 'con stato cancelled' : 'eliminato'} su Google Calendar`, {
+            appointmentDetails: {
+              id: appointment.id,
+              patient_name: appointment.patient_name,
+              date: appointment.date,
+              time: appointment.time,
+              google_calendar_event_id: appointment.google_calendar_event_id,
+              synced: appointment.synced,
+              sync_status: appointment.sync_status
+            }
+          });
+          
+          try {
+            // Esegui l'eliminazione in una transazione per garantire l'integrità dei dati
+            console.log(`[DEBUG][${new Date().toISOString()}] Inizio transazione per eliminazione appuntamento ${appointment.id}`);
+            this.log('info', `Inizio transazione per eliminazione appuntamento ${appointment.id}`);
+            this.db.prepare('BEGIN TRANSACTION').run();
+            
+            // Verifica se ci sono notifiche associate a questo appuntamento
+            console.log(`[DEBUG][${new Date().toISOString()}] Verifica notifiche associate all'appuntamento ${appointment.id}`);
+            const relatedNotifications = this.db.prepare('SELECT id FROM notifications WHERE appointment_id = ?').all(appointment.id);
+            
+            // Se ci sono notifiche associate, aggiorna il loro appointment_id a NULL
+            if (relatedNotifications && relatedNotifications.length > 0) {
+              console.log(`[DEBUG][${new Date().toISOString()}] Trovate ${relatedNotifications.length} notifiche associate all'appuntamento ${appointment.id}`);
+              this.log('info', `Trovate ${relatedNotifications.length} notifiche associate all'appuntamento ${appointment.id}`, {
+                notificationIds: relatedNotifications.map((n: any) => n.id)
+              });
+              
+              // Aggiorna le notifiche impostando appointment_id a NULL
+              // Questo risolve il problema del vincolo di chiave esterna
+              console.log(`[DEBUG][${new Date().toISOString()}] Aggiornamento notifiche associate all'appuntamento ${appointment.id}`);
+              const updateResult = this.db.prepare('UPDATE notifications SET appointment_id = NULL WHERE appointment_id = ?').run(appointment.id);
+              console.log(`[DEBUG][${new Date().toISOString()}] Aggiornate ${updateResult.changes} notifiche associate all'appuntamento ${appointment.id}`);
+              this.log('info', `Aggiornate ${updateResult.changes} notifiche associate all'appuntamento ${appointment.id}`);
+            } else {
+              console.log(`[DEBUG][${new Date().toISOString()}] Nessuna notifica associata all'appuntamento ${appointment.id}`);
+              this.log('info', `Nessuna notifica associata all'appuntamento ${appointment.id}`);
+            }
+            
+            // Elimina l'appuntamento dal database
+            console.log(`[DEBUG][${new Date().toISOString()}] Tentativo di eliminazione dell'appuntamento ${appointment.id} dal database`);
+            this.log('info', `Tentativo di eliminazione dell'appuntamento ${appointment.id} dal database`);
+            
+            // Verifica la struttura della tabella appointments
+            console.log(`[DEBUG][${new Date().toISOString()}] Verifica struttura tabella appointments`);
+            const tableInfo = this.db.prepare("PRAGMA table_info(appointments)").all();
+            console.log(`[DEBUG][${new Date().toISOString()}] Struttura tabella appointments:`, tableInfo.map((col: any) => ({ 
+              name: col.name, 
+              type: col.type, 
+              notnull: col.notnull, 
+              pk: col.pk 
+            })));
+            
+            // Verifica i vincoli di chiave esterna sulla tabella appointments
+            console.log(`[DEBUG][${new Date().toISOString()}] Verifica vincoli di chiave esterna sulla tabella appointments`);
+            const foreignKeys = this.db.prepare("PRAGMA foreign_key_list(appointments)").all();
+            console.log(`[DEBUG][${new Date().toISOString()}] Vincoli di chiave esterna sulla tabella appointments:`, foreignKeys);
+            
+            // Verifica i vincoli di chiave esterna che puntano alla tabella appointments
+            console.log(`[DEBUG][${new Date().toISOString()}] Verifica tabelle con vincoli di chiave esterna verso appointments`);
+            const tables = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
+            for (const table of tables) {
+              const tableName = (table as any).name;
+              if (tableName !== 'appointments') {
+                const tableKeys = this.db.prepare(`PRAGMA foreign_key_list(${tableName})`).all();
+                const appointmentKeys = tableKeys.filter((key: any) => key.table === 'appointments');
+                if (appointmentKeys.length > 0) {
+                  console.log(`[DEBUG][${new Date().toISOString()}] Tabella ${tableName} ha vincoli verso appointments:`, appointmentKeys);
+                }
+              }
+            }
+            
+            // Esegui l'eliminazione
+            const deleteResult = this.db.prepare('DELETE FROM appointments WHERE id = ?').run(appointment.id);
+            
+            // Verifica che l'eliminazione sia avvenuta con successo
+            console.log(`[DEBUG][${new Date().toISOString()}] Risultato eliminazione appuntamento ${appointment.id}:`, {
+              changes: deleteResult.changes,
+              lastInsertRowid: deleteResult.lastInsertRowid
+            });
+            
+            if (deleteResult.changes === 0) {
+              console.log(`[DEBUG][${new Date().toISOString()}] ERRORE: Nessuna riga modificata durante l'eliminazione dell'appuntamento ${appointment.id}`);
+              this.log('error', `Nessuna riga modificata durante l'eliminazione dell'appuntamento ${appointment.id}`);
+              throw new Error(`Impossibile eliminare l'appuntamento con ID ${appointment.id}: nessuna riga modificata`);
+            }
+            
+            console.log(`[DEBUG][${new Date().toISOString()}] Commit della transazione per l'appuntamento ${appointment.id}`);
+            this.log('info', `Commit della transazione per l'appuntamento ${appointment.id}`);
+            this.db.prepare('COMMIT').run();
+            eventiEliminati++;
+            console.log(`[DEBUG][${new Date().toISOString()}] Appuntamento ID: ${appointment.id} ${this.cancelledEventIds.has(appointment.google_calendar_event_id || '') ? 'con stato cancelled' : 'eliminato'} rimosso con successo`);
+            this.log('info', `Appuntamento ID: ${appointment.id} ${this.cancelledEventIds.has(appointment.google_calendar_event_id || '') ? 'con stato cancelled' : 'eliminato'} rimosso con successo`, {
+              deleteChanges: deleteResult.changes,
+              totalDeleted: eventiEliminati
+            });
+          } catch (deleteError) {
+            // In caso di errore, esegui rollback e registra l'errore
+            console.log(`[DEBUG][${new Date().toISOString()}] ERRORE durante la transazione, esecuzione rollback per l'appuntamento ${appointment.id}:`, {
+              errorMessage: deleteError instanceof Error ? deleteError.message : 'Errore sconosciuto',
+              errorName: deleteError instanceof Error ? deleteError.name : 'Unknown',
+              errorStack: deleteError instanceof Error ? deleteError.stack : 'Stack non disponibile'
+            });
+            this.log('error', `Errore durante la transazione, esecuzione rollback per l'appuntamento ${appointment.id}`);
+            this.db.prepare('ROLLBACK').run();
+            this.log('error', `Errore SQL durante l'eliminazione dell'appuntamento ${appointment.id}`, {
+              errorMessage: deleteError instanceof Error ? deleteError.message : 'Errore sconosciuto',
+              errorStack: deleteError instanceof Error ? deleteError.stack : 'Stack non disponibile',
+              appointmentId: appointment.id,
+              googleEventId: appointment.google_calendar_event_id
+            });
+            throw deleteError; // Rilancia l'errore per essere gestito dal blocco catch esterno
+          }
+        } catch (error) {
+          console.log(`[DEBUG][${new Date().toISOString()}] ERRORE durante l'eliminazione dell'appuntamento ${appointment.id}:`, {
+            errorMessage: error instanceof Error ? error.message : 'Errore sconosciuto',
+            errorName: error instanceof Error ? error.name : 'Unknown',
+            errorStack: error instanceof Error ? error.stack : 'Stack non disponibile'
+          });
+          this.log('error', `Errore durante l'eliminazione dell'appuntamento ${appointment.id}`, error);
+        }
+      }
+      
+      console.log(`[DEBUG][${new Date().toISOString()}] Completata verifica degli appuntamenti eliminati o con stato cancelled su Google Calendar. Rimossi ${eventiEliminati} appuntamenti.`);
+      this.log('info', `Completata verifica degli appuntamenti eliminati o con stato cancelled su Google Calendar. Rimossi ${eventiEliminati} appuntamenti.`);
+      
+      // Log dettagliato degli eventi cancellati
+      if (this.cancelledEventIds.size > 0) {
+        this.log('info', `Dettaglio: ${this.cancelledEventIds.size} appuntamenti avevano stato 'cancelled' su Google Calendar`);
+      }
+    } catch (error) {
+      console.log(`[DEBUG][${new Date().toISOString()}] ERRORE GENERALE durante la verifica degli appuntamenti eliminati:`, {
+        errorMessage: error instanceof Error ? error.message : 'Errore sconosciuto',
+        errorName: error instanceof Error ? error.name : 'Unknown',
+        errorStack: error instanceof Error ? error.stack : 'Stack non disponibile'
+      });
+      this.log('error', 'Errore durante la verifica degli appuntamenti eliminati da Google Calendar', error);
+      throw error;
+    } finally {
+      console.log(`[DEBUG][${new Date().toISOString()}] FINE checkDeletedEventsFromGoogleCalendar`);
+    }
+  }
+
+  /**
    * Ottiene gli eventi da Google Calendar e li sincronizza con gli appuntamenti locali
    * Rileva anche gli appuntamenti eliminati su Google Calendar e li rimuove dall'app
    */
@@ -2571,29 +3131,42 @@ export class GoogleCalendarService {
       this.db = getDatabase();
       if (!this.db) throw new Error('Database connection failed');
       
-      // Ottieni le impostazioni del calendario per determinare quale calendario utilizzare
-      const settings = await this.getCalendarSettings();
-      // Usa il calendario selezionato nelle impostazioni, se disponibile, altrimenti usa 'primary'
-      const calendarId = settings?.selectedCalendarId || 'primary';
+      // Prima verifichiamo se ci sono appuntamenti nel DB che sono stati eliminati da Google Calendar
+      // Questo utilizza la funzione checkDeletedEventsFromGoogleCalendar che altrimenti non verrebbe mai chiamata
+      try {
+        this.log('info', 'Verifica appuntamenti eliminati da Google Calendar');
+        await this.checkDeletedEventsFromGoogleCalendar();
+      } catch (error) {
+        this.log('error', 'Errore durante la verifica degli appuntamenti eliminati da Google Calendar', error);
+        // Continuiamo con la sincronizzazione anche se questa verifica fallisce
+      }
       
-      this.log('info', `Sincronizzazione eventi dal calendario: ${calendarId}`);
+      // Ottieni le impostazioni del calendario per determinare quali calendari utilizzare
+      const settings = await this.getCalendarSettings();
+      
+      // Determina quali calendari utilizzare
+      let calendarIds: string[] = [];
+      
+      // Usa i calendari selezionati nelle impostazioni, se disponibili
+      if (settings?.selectedCalendarIds && settings.selectedCalendarIds.length > 0) {
+        calendarIds = settings.selectedCalendarIds;
+        this.log('info', `Utilizzo di ${calendarIds.length} calendari selezionati: ${calendarIds.join(', ')}`);
+      } 
+      // Altrimenti, usa il calendario singolo selezionato (retrocompatibilità)
+      else if (settings?.selectedCalendarId) {
+        calendarIds = [settings.selectedCalendarId];
+        this.log('info', `Utilizzo del calendario selezionato: ${settings.selectedCalendarId}`);
+      } 
+      // Se non ci sono calendari selezionati, usa 'primary'
+      else {
+        calendarIds = ['primary'];
+        this.log('info', 'Nessun calendario selezionato, utilizzo del calendario primario');
+      }
       
       // Ottieni gli eventi da Google Calendar (ultimi 30 giorni e prossimi 90 giorni)
       const now = new Date();
       const timeMin = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
       const timeMax = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString();
-      
-      const response = await this.calendar.events.list({
-        calendarId: calendarId,
-        timeMin,
-        timeMax,
-        singleEvents: true,
-        orderBy: 'startTime'
-      });
-      
-      const events = response.data.items || [];
-      
-      this.log('info', `Trovati ${events.length} eventi nel calendario ${calendarId}`);
       
       // Ottieni tutti gli appuntamenti sincronizzati con Google Calendar nel periodo specificato
       const syncedAppointments = this.db.prepare(
@@ -2606,59 +3179,138 @@ export class GoogleCalendarService {
       
       // Crea un set di ID degli eventi presenti su Google Calendar
       const googleEventIds = new Set<string>();
-      events.forEach(event => {
-        if (event.id && event.description && event.description.toLowerCase().startsWith('<b>prenotato da')) {
-          googleEventIds.add(event.id);
+      let allEvents: calendar_v3.Schema$Event[] = [];
+      
+      // Itera su tutti i calendari selezionati
+      for (const calendarId of calendarIds) {
+        this.log('info', `Sincronizzazione eventi dal calendario: ${calendarId}`);
+        
+        try {
+          const response = await this.calendar.events.list({
+            calendarId: calendarId,
+            timeMin,
+            timeMax,
+            singleEvents: true,
+            orderBy: 'startTime'
+          });
+          
+          const events = response.data.items || [];
+          this.log('info', `Trovati ${events.length} eventi nel calendario ${calendarId}`);
+          
+          // Aggiungi gli eventi di questo calendario alla lista completa
+          allEvents = allEvents.concat(events);
+          
+          // Aggiungi gli ID degli eventi al set
+          events.forEach(event => {
+            if (event.id) {
+              googleEventIds.add(event.id);
+            }
+          });
+        } catch (error) {
+          this.log('error', `Errore durante il recupero degli eventi dal calendario ${calendarId}`, error);
+          // Continuiamo con gli altri calendari anche se uno fallisce
         }
-      });
+      }
+      
+      this.log('info', `Trovati ${allEvents.length} eventi totali in ${calendarIds.length} calendari`);
       
       // Identifica gli appuntamenti che non esistono più su Google Calendar
+      this.log('info', 'Identificazione degli appuntamenti eliminati su Google Calendar', {
+        totalSyncedAppointments: syncedAppointments.length,
+        totalGoogleEvents: googleEventIds.size
+      });
+      
+      // Log dettagliato degli ID degli eventi di Google Calendar
+      this.log('info', 'ID degli eventi presenti su Google Calendar', {
+        googleEventIds: Array.from(googleEventIds).slice(0, 30) // Limita a 30 ID per evitare log troppo lunghi
+      });
+      
       const deletedAppointments = syncedAppointments.filter(
         appointment => appointment.google_calendar_event_id && !googleEventIds.has(appointment.google_calendar_event_id)
       );
       
-      this.log('info', `Trovati ${deletedAppointments.length} appuntamenti eliminati su Google Calendar`);
+      this.log('info', `Trovati ${deletedAppointments.length} appuntamenti da eliminare (eliminati o con stato 'cancelled' su Google Calendar)`, {
+        deletedAppointmentIds: deletedAppointments.map(a => a.id),
+        deletedGoogleEventIds: deletedAppointments.map(a => a.google_calendar_event_id),
+        cancelledEventsCount: this.cancelledEventIds.size
+      });
       
       // Rimuovi gli appuntamenti eliminati su Google Calendar
       let eventiEliminati = 0;
       for (const appointment of deletedAppointments) {
         try {
-          this.log('info', `Rimozione appuntamento ID: ${appointment.id} eliminato su Google Calendar`);
+          // Verifica se l'appuntamento è stato cancellato (status=cancelled) o è stato eliminato completamente
+          const isCancelled = this.cancelledEventIds.has(appointment.google_calendar_event_id || '');
+          this.log('info', `Rimozione appuntamento ID: ${appointment.id} ${isCancelled ? 'con stato cancelled' : 'eliminato'} su Google Calendar`, {
+            appointmentDetails: {
+              id: appointment.id,
+              patient_name: appointment.patient_name,
+              date: appointment.date,
+              time: appointment.time,
+              google_calendar_event_id: appointment.google_calendar_event_id,
+              synced: appointment.synced,
+              sync_status: appointment.sync_status
+            }
+          });
           
-          // Aggiorna lo stato dell'appuntamento per indicare che è stato eliminato
-          // Utilizziamo 'failed' come sync_status invece di 'deleted_on_google' per rispettare il vincolo CHECK
-          // che permette solo i valori 'synced', 'pending', 'failed'
           try {
-            // Esegui l'aggiornamento in una transazione per garantire l'integrità dei dati
+            // Esegui l'eliminazione in una transazione per garantire l'integrità dei dati
+            this.log('info', `Inizio transazione per eliminazione appuntamento ${appointment.id}`);
             this.db.prepare('BEGIN TRANSACTION').run();
             
-            // Verifica se la colonna updated_at esiste nella tabella appointments
-            const columnInfo = this.db.prepare("PRAGMA table_info(appointments)").all() as any[];
-            const hasUpdatedAt = columnInfo.some((col: any) => col.name === 'updated_at');
+            // Verifica se ci sono notifiche associate a questo appuntamento
+            const relatedNotifications = this.db.prepare('SELECT id FROM notifications WHERE appointment_id = ?').all(appointment.id);
             
-            // Aggiorna lo stato dell'appuntamento con o senza updated_at a seconda della struttura della tabella
-            if (hasUpdatedAt) {
-              this.db.prepare(
-                'UPDATE appointments SET status = ?, sync_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
-              ).run('cancelled', 'failed', appointment.id);
+            // Se ci sono notifiche associate, aggiorna il loro appointment_id a NULL
+            if (relatedNotifications && relatedNotifications.length > 0) {
+              this.log('info', `Trovate ${relatedNotifications.length} notifiche associate all'appuntamento ${appointment.id}`, {
+                notificationIds: relatedNotifications.map((n: any) => n.id)
+              });
+              
+              // Aggiorna le notifiche impostando appointment_id a NULL
+              // Questo risolve il problema del vincolo di chiave esterna
+              const updateResult = this.db.prepare('UPDATE notifications SET appointment_id = NULL WHERE appointment_id = ?').run(appointment.id);
+              this.log('info', `Aggiornate ${updateResult.changes} notifiche associate all'appuntamento ${appointment.id}`);
             } else {
-              this.db.prepare(
-                'UPDATE appointments SET status = ?, sync_status = ? WHERE id = ?'
-              ).run('cancelled', 'failed', appointment.id);
+              this.log('info', `Nessuna notifica associata all'appuntamento ${appointment.id}`);
             }
             
+            // Elimina l'appuntamento dal database
+            this.log('info', `Tentativo di eliminazione dell'appuntamento ${appointment.id} dal database`);
+            const deleteResult = this.db.prepare('DELETE FROM appointments WHERE id = ?').run(appointment.id);
+            
+            // Verifica che l'eliminazione sia avvenuta con successo
+            if (deleteResult.changes === 0) {
+              this.log('error', `Nessuna riga modificata durante l'eliminazione dell'appuntamento ${appointment.id}`);
+              throw new Error(`Impossibile eliminare l'appuntamento con ID ${appointment.id}: nessuna riga modificata`);
+            }
+            
+            this.log('info', `Commit della transazione per l'appuntamento ${appointment.id}`);
             this.db.prepare('COMMIT').run();
-          } catch (updateError) {
+            eventiEliminati++;
+            this.log('info', `Appuntamento ID: ${appointment.id} ${this.cancelledEventIds.has(appointment.google_calendar_event_id || '') ? 'con stato cancelled' : 'eliminato'} rimosso con successo`, {
+              deleteChanges: deleteResult.changes,
+              totalDeleted: eventiEliminati
+            });
+          } catch (deleteError) {
             // In caso di errore, esegui rollback e registra l'errore
+            this.log('error', `Errore durante la transazione, esecuzione rollback per l'appuntamento ${appointment.id}`);
             this.db.prepare('ROLLBACK').run();
-            this.log('error', `Errore SQL durante l'aggiornamento dell'appuntamento ${appointment.id}`, updateError);
-            throw updateError; // Rilancia l'errore per essere gestito dal blocco catch esterno
+            this.log('error', `Errore SQL durante l'eliminazione dell'appuntamento ${appointment.id}`, {
+              errorMessage: deleteError instanceof Error ? deleteError.message : 'Errore sconosciuto',
+              errorStack: deleteError instanceof Error ? deleteError.stack : 'Stack non disponibile',
+              appointmentId: appointment.id,
+              googleEventId: appointment.google_calendar_event_id
+            });
+            throw deleteError; // Rilancia l'errore per essere gestito dal blocco catch esterno
           }
-          
-          eventiEliminati++;
-          this.log('info', `Appuntamento ID: ${appointment.id} marcato come eliminato`);
         } catch (deleteError) {
-          this.log('error', `Errore durante la rimozione dell'appuntamento ${appointment.id}`, deleteError);
+          this.log('error', `Errore durante la rimozione dell'appuntamento ${appointment.id}`, {
+            errorMessage: deleteError instanceof Error ? deleteError.message : 'Errore sconosciuto',
+            errorStack: deleteError instanceof Error ? deleteError.stack : 'Stack non disponibile',
+            appointmentId: appointment.id,
+            googleEventId: appointment.google_calendar_event_id
+          });
         }
       }
       
@@ -2666,7 +3318,7 @@ export class GoogleCalendarService {
       let eventiAggiornati = 0;
       let eventiSaltati = 0;
       
-      for (const event of events) {
+      for (const event of allEvents) {
         if (!event.id) {
           this.log('warn', 'Evento senza ID saltato');
           eventiSaltati++;
@@ -2674,6 +3326,8 @@ export class GoogleCalendarService {
         }
         
         // Verifica se l'evento ha una descrizione che inizia con "prenotato da"
+        // Nota: Questo filtro viene applicato solo per la creazione/aggiornamento di appuntamenti,
+        // ma non influisce sulla rilevazione degli appuntamenti eliminati
         if (!event.description || !event.description.toLowerCase().startsWith('<b>prenotato da')) {
           this.log('info', `[DESCRIPTION] ${event.description}`);
           this.log('info', `Evento ${event.id} ignorato: la descrizione non inizia con "prenotato da"`);
@@ -2729,7 +3383,7 @@ export class GoogleCalendarService {
             aggiornati: eventiAggiornati,
             saltati: eventiSaltati,
             eliminati: eventiEliminati,
-            totale: events.length
+            totale: allEvents.length
           };
           
           const jsonSettings = JSON.stringify(settings);
@@ -2762,7 +3416,47 @@ export class GoogleCalendarService {
           if (codeMatch && codeMatch[1]) {
             this.log('error', `Codice errore SQLite: ${codeMatch[1]}`);
           }
+          
+          // Verifica se l'errore è relativo a vincoli di chiave esterna
+          if (error.message.includes('FOREIGN KEY constraint failed')) {
+            this.log('error', 'Errore di vincolo di chiave esterna durante la sincronizzazione', {
+              errorDetails: 'Questo errore potrebbe essere causato da relazioni tra tabelle che impediscono l\'eliminazione'
+            });
+          }
+          
+          // Verifica se l'errore è relativo a tabella bloccata
+          if (error.message.includes('database is locked') || error.message.includes('database table is locked')) {
+            this.log('error', 'Database bloccato durante la sincronizzazione', {
+              errorDetails: 'Il database potrebbe essere bloccato da un\'altra operazione in corso'
+            });
+          }
         }
+        
+        // Verifica se l'errore è relativo all'API di Google Calendar
+        if (error.message.includes('Google API') || error.message.includes('calendar.events')) {
+          this.log('error', 'Errore API Google Calendar durante la sincronizzazione', {
+            errorDetails: error.message,
+            possibleCauses: 'Token scaduto, permessi insufficienti, limiti di quota raggiunti'
+          });
+        }
+      }
+      
+      // Registra lo stato della connessione al database
+      try {
+        const dbStatus = this.db ? 'Connessione al database attiva' : 'Connessione al database non disponibile';
+        this.log('error', `Stato database durante l'errore: ${dbStatus}`);
+        
+        // Verifica se possiamo eseguire una query di test
+        if (this.db) {
+          try {
+            const testQuery = this.db.prepare('SELECT 1 AS test').get();
+            this.log('info', 'Query di test al database eseguita con successo', { testResult: testQuery });
+          } catch (testError) {
+            this.log('error', 'Errore durante la query di test al database', testError);
+          }
+        }
+      } catch (dbCheckError) {
+        this.log('error', 'Errore durante la verifica dello stato del database', dbCheckError);
       }
     }
   }
