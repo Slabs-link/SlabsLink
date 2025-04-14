@@ -33,10 +33,31 @@ class WhatsAppService {
    * @param message Message text
    * @returns Promise with the result of the operation
    */
-  async sendMessage(to: string, message: string): Promise<boolean> {
+  async sendMessage(to: string, message: string, useWebWhatsApp: boolean = false): Promise<boolean> {
     try {
       // Format the phone number
       const formattedNumber = this.formatPhoneNumber(to);
+      
+      // Verifica se è richiesto l'uso di WhatsApp Web
+      if (useWebWhatsApp || process.env.USE_WHATSAPP_WEB === 'true') {
+        try {
+          // Importa dinamicamente il servizio WhatsApp Web
+          const { default: WhatsAppWebService } = await import('./whatsapp-web.service');
+          
+          // Tenta di inviare il messaggio tramite WhatsApp Web
+          const success = await WhatsAppWebService.sendMessage(to, message, true);
+          if (success) {
+            console.log(`WhatsApp Web message sent to ${to}`);
+            return true;
+          }
+          
+          // Se fallisce, continua con il metodo standard
+          console.log('WhatsApp Web sending failed, falling back to standard method');
+        } catch (webError) {
+          console.error('Error using WhatsApp Web service:', webError);
+          // Continua con il metodo standard
+        }
+      }
       
       // If WhatsApp is not configured, simulate sending
       if (!this.isConfigured) {

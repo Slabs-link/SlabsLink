@@ -187,17 +187,15 @@ const startServer = async () => {
         }
       });
       
-      // Configura l'elaborazione automatica delle notifiche WhatsApp in attesa
-      // Esegui l'elaborazione ogni 5 minuti
-      cron.schedule('*/5 * * * *', async () => {
-        console.log(`[${new Date().toISOString()}] Avvio elaborazione automatica delle notifiche WhatsApp in attesa`);
+      // Funzione per elaborare le notifiche WhatsApp in attesa
+      // Estratta in una funzione separata per poterla richiamare sia dal cron job che dopo l'autenticazione
+      const processWhatsAppNotifications = async (
+        db: any, 
+        WhatsAppWebService: any, 
+        WhatsAppService: any, 
+        useWhatsAppWeb: boolean
+      ) => {
         try {
-          // Ottieni il database
-          const db = getDatabase();
-          if (!db) {
-            throw new Error('Database non disponibile');
-          }
-          
           // Recupera tutte le notifiche in attesa
           const pendingNotifications = db.prepare(`
             SELECT n.*, u.phone, u.first_name, u.last_name
@@ -207,10 +205,13 @@ const startServer = async () => {
             ORDER BY n.created_at ASC
           `).all() as Notification[];
           
-          console.log(`[${new Date().toISOString()}] Trovate ${pendingNotifications.length} notifiche in attesa`);
+          console.log(`[${new Date().toISOString()}] Trovate ${pendingNotifications.length} notifiche in attesa da elaborare`);
           
-          // Importa il servizio WhatsApp
-          const WhatsAppService = require('./services/whatsapp.service').default;
+          // Se non ci sono notifiche in attesa, termina
+          if (pendingNotifications.length === 0) {
+            console.log(`[${new Date().toISOString()}] Nessuna notifica in attesa da elaborare`);
+            return;
+          }
           
           // Elabora ogni notifica
           let successCount = 0;
@@ -226,7 +227,14 @@ const startServer = async () => {
               }
               
               // Invia la notifica WhatsApp
-              const success = await WhatsAppService.sendMessage(typedNotification.phone, typedNotification.message);
+              let success = false;
+              if (useWhatsAppWeb) {
+                // Utilizza WhatsApp Web per inviare il messaggio
+                success = await WhatsAppWebService.sendMessage(typedNotification.phone, typedNotification.message, true);
+              } else {
+                // Utilizza WhatsApp Business API come fallback
+                success = await WhatsAppService.sendMessage(typedNotification.phone, typedNotification.message);
+              }
               
               if (success) {
                 // Aggiorna lo stato della notifica a 'sent'
@@ -269,9 +277,97 @@ const startServer = async () => {
           
           console.log(`[${new Date().toISOString()}] Elaborazione notifiche completata: ${successCount} inviate con successo, ${failCount} fallite`);
         } catch (error) {
+          console.error(`[${new Date().toISOString()}] Errore durante l'elaborazione delle notifiche:`, error);
+        }
+      };
+      
+      // Configura l'elaborazione automatica delle notifiche WhatsApp in attesa
+      // Esegui l'elaborazione ogni 5 minuti
+      cron.schedule('*/5 * * * *', async () => {
+        console.log(`[${new Date().toISOString()}] Avvio elaborazione automatica delle notifiche WhatsApp in attesa`);
+        try {
+          // Ottieni il database
+          const db = getDatabase();
+          if (!db) {
+            throw new Error('Database non disponibile');
+          }
+          
+          // Importa il servizio WhatsApp
+          const WhatsAppService = require('./services/whatsapp.service').default;
+          
+          // Importa il servizio di automazione WhatsApp Web
+          // Importa e inizializza il servizio una sola volta per tutte le notifiche
+          const { default: WhatsAppWebService } = await import('./services/whatsapp-web.service');
+          
+          // Verifica se è configurato per utilizzare WhatsApp Web
+          const useWhatsAppWeb = process.env.USE_WHATSAPP_WEB === 'true';
+          
+          // Se usiamo WhatsApp Web, inizializza il servizio una sola volta
+          if (useWhatsAppWeb) {
+            // Inizializza il servizio WhatsApp Web se non è già inizializzato
+            if (!WhatsAppWebService.isReady()) {
+              console.log(`[${new Date().toISOString()}] Inizializzazione del servizio WhatsApp Web`);
+              await WhatsAppWebService.initialize();
+            }
+            
+            // Verifica lo stato di autenticazione
+            if (!WhatsAppWebService.isUserAuthenticated()) {
+              const isAuthenticated = await WhatsAppWebService.checkAuthenticationStatus();
+              if (!isAuthenticated) {
+                console.log(`[${new Date().toISOString()}] Autenticazione WhatsApp Web richiesta, in attesa...`);
+                // Aggiorna tutte le notifiche in attesa con lo stato 'authentication_required'
+                db.prepare(`
+                  UPDATE notifications SET
+                    status = 'authentication_required',
+                    error_message = 'Autenticazione WhatsApp Web richiesta',
+                    updated_at = datetime('now')
+                  WHERE status = 'pending'
+                `).run();
+                return;
+              } else {
+                // Se l'autenticazione è avvenuta con successo, verifica se ci sono notifiche in stato 'authentication_required'
+                // e riportale allo stato 'pending' per permettere la loro elaborazione
+                // Definisco un'interfaccia per il risultato della query
+                interface CountResult {
+                  count: number;
+                }
+                
+                // Applico un type assertion per risolvere l'errore TypeScript
+                const authRequiredCount = (db.prepare(`
+                  SELECT COUNT(*) as count FROM notifications WHERE status = 'authentication_required'
+                `).get() as CountResult).count;
+                
+                if (authRequiredCount > 0) {
+                  console.log(`[${new Date().toISOString()}] Autenticazione completata, ripristino ${authRequiredCount} notifiche in attesa`);
+                  db.prepare(`
+                    UPDATE notifications SET
+                      status = 'pending',
+                      error_message = NULL,
+                      updated_at = datetime('now')
+                    WHERE status = 'authentication_required'
+                  `).run();
+                   
+                  // Forza l'elaborazione immediata delle notifiche in attesa
+                  console.log(`[${new Date().toISOString()}] Avvio elaborazione immediata delle notifiche ripristinate`);
+                  // Non aspettiamo il prossimo ciclo di cron, ma elaboriamo subito le notifiche
+                  setTimeout(() => {
+                    processWhatsAppNotifications(db, WhatsAppWebService, WhatsAppService, useWhatsAppWeb);
+                  }, 1000); // Attendi 1 secondo per assicurarsi che il database sia aggiornato
+                }
+              }
+            }
+          }
+          
+          // Procedi con l'elaborazione delle notifiche in attesa
+          await processWhatsAppNotifications(db, WhatsAppWebService, WhatsAppService, useWhatsAppWeb);
+        } catch (error) {
           console.error(`[${new Date().toISOString()}] Errore durante l'elaborazione automatica delle notifiche:`, error);
         }
       });
+      
+      // Esporta la funzione di elaborazione delle notifiche per poterla richiamare da altri moduli
+      // Questo è necessario per il trigger immediato dopo l'autenticazione
+      (global as any).processWhatsAppNotifications = processWhatsAppNotifications;
     } catch (error) {
       console.error(`[${new Date().toISOString()}] Errore durante l'inizializzazione del servizio di backup:`, error);
     }

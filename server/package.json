@@ -12,6 +12,7 @@
     "migrate:google-calendar": "ts-node src/db/migrations/run-google-calendar-migrations.ts"
   },
   "dependencies": {
+    "puppeteer": "^21.3.8",
     "@types/morgan": "^1.9.9",
     "axios": "^1.8.3",
     "better-sqlite3": "^11.9.1",

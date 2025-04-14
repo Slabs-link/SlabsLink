@@ -452,6 +452,64 @@ export const processNotifications = async (req: Request, res: Response) => {
   }
 };
 
+// Resend a notification
+export const resendNotification = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const db = getDatabase();
+    
+    // Verifica che la notifica esista
+    const notification = db.prepare(`
+      SELECT n.*, u.phone, u.first_name, u.last_name,
+             a.appointment_type_id, at.name as appointment_type_name
+      FROM notifications n
+      JOIN users u ON n.user_id = u.id
+      LEFT JOIN appointments a ON n.appointment_id = a.id
+      LEFT JOIN appointment_types at ON a.appointment_type_id = at.id
+      WHERE n.id = ?
+    `).get(id) as NotificationWithUser;
+    
+    if (!notification) {
+      return res.status(404).json({ message: 'Notifica non trovata' });
+    }
+    
+    // Aggiorna lo stato della notifica a 'pending'
+    const updateStmt = db.prepare(`
+      UPDATE notifications SET
+        status = 'pending',
+        error_message = NULL,
+        updated_at = datetime('now')
+      WHERE id = ?
+    `);
+    
+    updateStmt.run(id);
+    
+    // Ottieni la notifica aggiornata
+    const updatedNotification = db.prepare(`
+      SELECT n.*, u.first_name, u.last_name,
+             a.appointment_type_id, at.name as appointment_type_name
+      FROM notifications n
+      JOIN users u ON n.user_id = u.id
+      LEFT JOIN appointments a ON n.appointment_id = a.id
+      LEFT JOIN appointment_types at ON a.appointment_type_id = at.id
+      WHERE n.id = ?
+    `).get(id);
+    
+    return res.json({
+      success: true,
+      message: 'Notifica reimpostata per l\'invio',
+      notification: updatedNotification
+    });
+  } catch (error: any) {
+    console.error('Errore durante il reinvio della notifica:', error);
+    return res.status(500).json({ 
+      success: false,
+      message: 'Errore durante il reinvio della notifica', 
+      error: error.message 
+    });
+  }
+};
+
 // Process a single notification
 export const processSingleNotification = async (req: Request, res: Response) => {
   try {
@@ -757,62 +815,7 @@ export const createNotificationFromTemplate = async (req: Request, res: Response
   }
 };
 
-// Resend notification
-export const resendNotification = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const db = getDatabase();
-    
-    // Check if notification exists
-    interface NotificationWithUser extends Notification {
-      phone?: string;
-    }
 
-    const notification = db.prepare(`
-      SELECT n.*, u.phone, u.first_name, u.last_name,
-             a.appointment_type_id, at.name as appointment_type_name
-      FROM notifications n
-      JOIN users u ON n.user_id = u.id
-      LEFT JOIN appointments a ON n.appointment_id = a.id
-      LEFT JOIN appointment_types at ON a.appointment_type_id = at.id
-      WHERE n.id = ?
-    `).get(id) as NotificationWithUser;
-    
-    if (!notification) {
-      return res.status(404).json({ message: 'Notification not found' });
-    }
-    
-    // Reset notification status
-    const updateStmt = db.prepare(`
-      UPDATE notifications SET
-        status = 'pending',
-        error_message = NULL,
-        updated_at = datetime('now')
-      WHERE id = ?
-    `);
-    
-    updateStmt.run(id);
-    
-    // Get the updated notification
-    const updatedNotification = db.prepare(`
-      SELECT n.*, u.first_name, u.last_name,
-             a.appointment_type_id, at.name as appointment_type_name
-      FROM notifications n
-      JOIN users u ON n.user_id = u.id
-      LEFT JOIN appointments a ON n.appointment_id = a.id
-      LEFT JOIN appointment_types at ON a.appointment_type_id = at.id
-      WHERE n.id = ?
-    `).get(id);
-    
-    return res.json(updatedNotification);
-  } catch (error: any) {
-    console.error('Error resending notification:', error);
-    return res.status(500).json({ 
-      message: 'Error resending notification', 
-      error: error.message 
-    });
-  }
-};
 
 // Endpoint per le notifiche automatiche degli appuntamenti
 export const createAppointmentNotification = async (req: Request, res: Response) => {

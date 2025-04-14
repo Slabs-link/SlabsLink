@@ -348,6 +348,116 @@ export class GoogleCalendarWatchService extends GoogleCalendarService {
    * @param resourceId - ID della risorsa modificata
    */
   /**
+   * Crea una notifica per un appuntamento
+   * @param appointmentId - ID dell'appuntamento
+   * @param patientId - ID del paziente
+   * @param notificationType - Tipo di notifica (creation, update, cancellation)
+   */
+  private async createNotificationForAppointment(appointmentId: number, patientId: number, notificationType: 'creation' | 'update' | 'cancellation'): Promise<void> {
+    try {
+      const db = getDatabase();
+      if (!db) {
+        throw new Error('Database non disponibile');
+      }
+      
+      // Determina il tipo di template da utilizzare
+      let templateType = '';
+      switch (notificationType) {
+        case 'creation':
+          templateType = 'appointment_created';
+          break;
+        case 'update':
+          templateType = 'appointment_update';
+          break;
+        case 'cancellation':
+          templateType = 'appointment_cancellation';
+          break;
+      }
+      
+      // Ottieni il template appropriato
+      const template = db.prepare(`
+        SELECT * FROM notification_templates 
+        WHERE type = ? 
+        LIMIT 1
+      `).get(templateType) as { id: number, content: string };
+      
+      if (!template) {
+        this.log('warn', `Template per ${templateType} non trovato`);
+        return;
+      }
+      
+      // Ottieni i dettagli del paziente
+      const patient = db.prepare(`
+        SELECT first_name, last_name, phone FROM users 
+        WHERE id = ?
+      `).get(patientId) as { first_name: string, last_name: string, phone: string };
+      
+      if (!patient) {
+        this.log('warn', `Paziente con ID ${patientId} non trovato`);
+        return;
+      }
+      
+      // Ottieni i dettagli dell'appuntamento
+      const appointment = db.prepare(`
+        SELECT date, time, title FROM appointments 
+        WHERE id = ?
+      `).get(appointmentId) as { date: string, time: string, title: string };
+      
+      if (!appointment) {
+        this.log('warn', `Appuntamento con ID ${appointmentId} non trovato`);
+        return;
+      }
+      
+      // Ottieni le impostazioni generali per il nome dell'azienda
+      const generalSettings = db.prepare('SELECT * FROM app_settings WHERE key = ?').get('general') as { value: string } | undefined;
+      let clinicName = 'SlabsLink';
+      
+      if (generalSettings) {
+        try {
+          const settings = JSON.parse(generalSettings.value);
+          if (settings && settings.clinicName) {
+            clinicName = settings.clinicName;
+          }
+        } catch (error) {
+          this.log('error', 'Errore nel parsing delle impostazioni generali', error);
+        }
+      }
+      
+      // Sostituisci le variabili nel template
+      let message = template.content
+        .replace(/\{\{first_name\}\}|\{first_name\}/g, patient.first_name || '')
+        .replace(/\{\{last_name\}\}|\{last_name\}/g, patient.last_name || '')
+        .replace(/\{\{appointment_date\}\}|\{appointment_date\}/g, appointment.date || '')
+        .replace(/\{\{appointment_time\}\}|\{appointment_time\}/g, appointment.time || '')
+        .replace(/\{\{appointment_title\}\}|\{appointment_title\}/g, appointment.title || 'Appuntamento')
+        .replace(/\{\{clinic_name\}\}|\{clinic_name\}/g, clinicName)
+        .replace(/SlabsLink/g, clinicName); // Retrocompatibilità
+      
+      // Inserisci la notifica
+      const notificationInsert = db.prepare(`
+        INSERT INTO notifications (
+          user_id, message, status, template_id, appointment_id, phone, created_at, updated_at
+        ) VALUES (?, ?, 'pending', ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `);
+      
+      const notificationResult = notificationInsert.run(
+        patientId,
+        message,
+        template.id,
+        appointmentId,
+        patient.phone || null
+      );
+      
+      // Ottieni l'ID della notifica appena creata
+      const notificationId = notificationResult.lastInsertRowid;
+      
+      this.log('info', `Notifica ID ${notificationId} creata per l'appuntamento ${appointmentId} (${notificationType})`);
+    } catch (error) {
+      this.log('error', `Errore nella creazione della notifica per l'appuntamento: ${error}`);
+    }
+  }
+  
+  /**
    * Processa un evento di calendario in base allo stato della risorsa e all'ID della risorsa
    * Implementazione del metodo della classe base
    */
@@ -447,6 +557,20 @@ export class GoogleCalendarWatchService extends GoogleCalendarService {
     if (existingAppointment) {
       // Aggiorna l'appuntamento esistente
       await this.updateAppointmentFromEvent(existingAppointment.id, event);
+      
+      // Crea una notifica per l'aggiornamento dell'appuntamento
+      try {
+        // Ottieni i dettagli dell'appuntamento aggiornato
+        const updatedAppointment = db.prepare('SELECT * FROM appointments WHERE id = ?').get(existingAppointment.id) as Appointment;
+        
+        if (updatedAppointment && updatedAppointment.patient_id) {
+          // Crea una notifica per l'aggiornamento dell'appuntamento
+          await this.createNotificationForAppointment(updatedAppointment.id, updatedAppointment.patient_id, 'update');
+        }
+      } catch (notificationError) {
+        this.log('error', `Errore nella creazione della notifica per l'aggiornamento dell'appuntamento: ${notificationError}`);
+        // Non blocchiamo l'aggiornamento dell'appuntamento se la creazione della notifica fallisce
+      }
     } else {
       // Verifica se l'evento è stato creato tramite la funzionalità di prenotazione
       const isBooking = this.isBookingEvent(event);
@@ -673,8 +797,8 @@ export class GoogleCalendarWatchService extends GoogleCalendarService {
       
       // Ottieni il nome e cognome del paziente per il titolo dell'appuntamento
       let title = '';
-      const patient = db.prepare('SELECT first_name, last_name FROM users WHERE id = ?').get(patientId) as 
-        { first_name: string, last_name: string } | undefined;
+      const patient = db.prepare('SELECT first_name, last_name, phone FROM users WHERE id = ?').get(patientId) as 
+        { first_name: string, last_name: string, phone: string } | undefined;
       
       if (patient) {
         // Usa nome e cognome del paziente come titolo dell'appuntamento
@@ -751,7 +875,71 @@ export class GoogleCalendarWatchService extends GoogleCalendarService {
         event.id
       );
       
-      this.log('info', `Nuovo appuntamento creato con ID: ${(result as { lastInsertRowid: number }).lastInsertRowid}`);
+      const appointmentId = (result as { lastInsertRowid: number }).lastInsertRowid;
+      this.log('info', `Nuovo appuntamento creato con ID: ${appointmentId}`);
+      
+      // Crea una notifica per l'appuntamento importato da Google Calendar
+      if (patientId && patient) {
+        try {
+          // Ottieni il template per le notifiche di Google Calendar
+          const template = db.prepare(`
+            SELECT * FROM notification_templates 
+            WHERE type = 'google_calendar_confirmation' AND is_system = 1
+            LIMIT 1
+          `).get() as { id: number, content: string };
+          
+          if (template) {
+            // Ottieni le impostazioni generali per il nome dell'azienda
+            const generalSettings = db.prepare('SELECT * FROM app_settings WHERE key = ?').get('general') as { value: string } | undefined;
+            let clinicName = 'SlabsLink';
+            
+            if (generalSettings) {
+              try {
+                const settings = JSON.parse(generalSettings.value);
+                if (settings && settings.clinicName) {
+                  clinicName = settings.clinicName;
+                }
+              } catch (error) {
+                this.log('error', 'Errore nel parsing delle impostazioni generali', error);
+              }
+            }
+            
+            // Sostituisci i placeholder nel template
+            let message = template.content
+              .replace(/\{\{first_name\}\}|\{first_name\}/g, patient.first_name || '')
+              .replace(/\{\{last_name\}\}|\{last_name\}/g, patient.last_name || '')
+              .replace(/\{\{appointment_date\}\}|\{appointment_date\}/g, date)
+              .replace(/\{\{appointment_time\}\}|\{appointment_time\}/g, time)
+              .replace(/\{\{clinic_name\}\}|\{clinic_name\}/g, clinicName)
+              .replace(/SlabsLink/g, clinicName); // Retrocompatibilità
+            
+            // Inserisci la notifica
+            const notificationInsert = db.prepare(`
+              INSERT INTO notifications (
+                user_id, message, status, template_id, appointment_id, phone, created_at, updated_at
+              ) VALUES (?, ?, 'pending', ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            `);
+            
+            const notificationResult = notificationInsert.run(
+              patientId,
+              message,
+              template.id,
+              appointmentId,
+              patient.phone || null
+            );
+            
+            // Ottieni l'ID della notifica appena creata
+            const notificationId = notificationResult.lastInsertRowid;
+            
+            this.log('info', `Notifica ID ${notificationId} creata per l'appuntamento importato da Google Calendar per l'utente ${patientId}`);
+          } else {
+            this.log('warn', 'Template per notifiche Google Calendar non trovato');
+          }
+        } catch (notificationError) {
+          this.log('error', `Errore nella creazione della notifica per l'appuntamento importato da Google Calendar: ${notificationError}`);
+          // Non blocchiamo la creazione dell'appuntamento se la creazione della notifica fallisce
+        }
+      }
     } catch (error) {
       this.log('error', 'Errore durante la creazione dell\'appuntamento', error);
       throw error;

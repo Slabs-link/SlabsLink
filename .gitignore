@@ -1,2 +1,11 @@
 node_modules/electron/dist/electron.exe
 server/data/slabs.db
+server/backups/slabs-db-2025-04-12T07-00-00-538Z.sqlite
+server/backups/slabs-db-2025-04-12T09-00-00-693Z.sqlite
+server/backups/slabs-db-2025-04-12T11-00-00-714Z.sqlite
+server/backups/slabs-db-2025-04-12T10-00-03-028Z.sqlite
+server/backups/slabs-db-2025-04-12T18-00-02-480Z.sqlite
+server/data/slabs.db
+server/data/slabs.db
+server/data/slabs.db
+server/data/slabs.db

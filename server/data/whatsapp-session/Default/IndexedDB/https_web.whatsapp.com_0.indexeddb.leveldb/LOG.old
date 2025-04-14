@@ -1,0 +1,76 @@
+2025/04/11-21:20:10.881 5f58 Reusing MANIFEST C:\Users\Ciro Latela\Desktop\SlabsLink\server\data\whatsapp-session\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2025/04/11-21:20:10.892 5f58 Recovering log #447
+2025/04/11-21:20:11.019 5f58 Reusing old log C:\Users\Ciro Latela\Desktop\SlabsLink\server\data\whatsapp-session\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/000447.log 
+2025/04/11-21:20:20.675 12c74 Level-0 table #466: started
+2025/04/11-21:20:20.766 12c74 Level-0 table #466: 374634 bytes OK
+2025/04/11-21:20:20.778 12c74 Delete type=0 #447
+2025/04/11-21:20:20.782 5f58 Manual compaction at level-0 from '\x00\x1c\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x1d\x00\x00\x00' @ 0 : 0; will stop at '\x00\x1c\x00\x00\x05' @ 1823939 : 1
+2025/04/11-21:20:20.805 5f58 Compacting 1@0 + 0@1 files
+2025/04/11-21:20:20.912 5f58 Generated table #467@0: 10229 keys, 183228 bytes
+2025/04/11-21:20:21.050 5f58 Generated table #468@0: 1455 keys, 29567 bytes
+2025/04/11-21:20:21.050 5f58 Compacted 1@0 + 0@1 files => 212795 bytes
+2025/04/11-21:20:21.080 5f58 compacted to: files[ 0 2 13 0 0 0 0 ]
+2025/04/11-21:20:21.098 5f58 Delete type=2 #466
+2025/04/11-21:20:21.181 5f58 Manual compaction at level-0 from '\x00\x1c\x00\x00\x05' @ 1823939 : 1 .. '\x00\x1d\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/04/11-21:20:26.319 12c74 Compacting 1@1 + 10@2 files
+2025/04/11-21:20:29.741 12c74 Generated table #469@1: 41878 keys, 2208881 bytes
+2025/04/11-21:20:30.549 12c74 Generated table #470@1: 3109 keys, 2160656 bytes
+2025/04/11-21:20:31.952 12c74 Generated table #471@1: 3423 keys, 2161120 bytes
+2025/04/11-21:20:34.177 12c74 Generated table #472@1: 2986 keys, 2168622 bytes
+2025/04/11-21:20:35.293 12c74 Generated table #473@1: 2711 keys, 2150559 bytes
+2025/04/11-21:20:37.341 12c74 Generated table #474@1: 21294 keys, 2198274 bytes
+2025/04/11-21:20:37.916 12c74 Generated table #475@1: 27401 keys, 2267236 bytes
+2025/04/11-21:20:39.744 12c74 Generated table #476@1: 27211 keys, 2249375 bytes
+2025/04/11-21:20:40.847 12c74 Generated table #477@1: 10338 keys, 2134678 bytes
+2025/04/11-21:20:41.547 12c74 Generated table #478@1: 99391 keys, 2248315 bytes
+2025/04/11-21:20:41.716 12c74 Generated table #479@1: 4270 keys, 92252 bytes
+2025/04/11-21:20:41.717 12c74 Compacted 1@1 + 10@2 files => 22039968 bytes
+2025/04/11-21:20:41.732 12c74 compacted to: files[ 0 1 14 0 0 0 0 ]
+2025/04/11-21:20:41.737 12c74 Delete type=2 #453
+2025/04/11-21:20:41.738 12c74 Delete type=2 #454
+2025/04/11-21:20:41.738 12c74 Delete type=2 #455
+2025/04/11-21:20:41.739 12c74 Delete type=2 #456
+2025/04/11-21:20:41.741 12c74 Delete type=2 #457
+2025/04/11-21:20:41.742 12c74 Delete type=2 #458
+2025/04/11-21:20:41.743 12c74 Delete type=2 #459
+2025/04/11-21:20:41.743 12c74 Delete type=2 #460
+2025/04/11-21:20:41.744 12c74 Delete type=2 #461
+2025/04/11-21:20:41.744 12c74 Delete type=2 #462
+2025/04/11-21:20:41.745 12c74 Delete type=2 #467
+2025/04/11-21:20:54.882 170 Level-0 table #481: started
+2025/04/11-21:20:55.075 170 Level-0 table #481: 367510 bytes OK
+2025/04/11-21:20:55.165 170 Delete type=0 #465
+2025/04/11-21:20:55.221 12c74 Manual compaction at level-0 from '\x00\x1d\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x1e\x00\x00\x00' @ 0 : 0; will stop at '\x00\x1d\x00\x00\x05' @ 1837199 : 1
+2025/04/11-21:20:55.222 12c74 Compacting 1@0 + 1@1 files
+2025/04/11-21:20:55.482 12c74 Generated table #482@0: 7825 keys, 204664 bytes
+2025/04/11-21:20:55.609 12c74 Generated table #483@0: 1521 keys, 31111 bytes
+2025/04/11-21:20:55.609 12c74 Compacted 1@0 + 1@1 files => 235775 bytes
+2025/04/11-21:20:55.622 12c74 compacted to: files[ 0 2 14 0 0 0 0 ]
+2025/04/11-21:20:55.761 12c74 Delete type=2 #481
+2025/04/11-21:20:55.821 12c74 Manual compaction at level-0 from '\x00\x1d\x00\x00\x05' @ 1837199 : 1 .. '\x00\x1e\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/04/11-21:21:01.172 5f58 Compacting 1@1 + 10@2 files
+2025/04/11-21:21:04.795 5f58 Generated table #484@1: 43951 keys, 2208464 bytes
+2025/04/11-21:21:05.269 5f58 Generated table #485@1: 3090 keys, 2160301 bytes
+2025/04/11-21:21:05.553 5f58 Generated table #486@1: 3422 keys, 2161827 bytes
+2025/04/11-21:21:06.084 5f58 Generated table #487@1: 2994 keys, 2159168 bytes
+2025/04/11-21:21:06.418 5f58 Generated table #488@1: 2682 keys, 2149431 bytes
+2025/04/11-21:21:06.860 5f58 Generated table #489@1: 20352 keys, 2193224 bytes
+2025/04/11-21:21:08.756 5f58 Generated table #490@1: 27377 keys, 2267673 bytes
+2025/04/11-21:21:11.019 5f58 Generated table #491@1: 28018 keys, 2253283 bytes
+2025/04/11-21:21:11.447 5f58 Generated table #492@1: 10080 keys, 2134674 bytes
+2025/04/11-21:21:14.238 5f58 Generated table #493@1: 95361 keys, 2244109 bytes
+2025/04/11-21:21:14.381 5f58 Generated table #494@1: 4677 keys, 105701 bytes
+2025/04/11-21:21:14.381 5f58 Compacted 1@1 + 10@2 files => 22037855 bytes
+2025/04/11-21:21:14.431 5f58 compacted to: files[ 0 1 15 0 0 0 0 ]
+2025/04/11-21:21:14.437 5f58 Delete type=2 #468
+2025/04/11-21:21:14.437 5f58 Delete type=2 #469
+2025/04/11-21:21:14.438 5f58 Delete type=2 #470
+2025/04/11-21:21:14.438 5f58 Delete type=2 #471
+2025/04/11-21:21:14.440 5f58 Delete type=2 #472
+2025/04/11-21:21:14.441 5f58 Delete type=2 #473
+2025/04/11-21:21:14.444 5f58 Delete type=2 #474
+2025/04/11-21:21:14.445 5f58 Delete type=2 #475
+2025/04/11-21:21:14.445 5f58 Delete type=2 #476
+2025/04/11-21:21:14.446 5f58 Delete type=2 #477
+2025/04/11-21:21:14.446 5f58 Delete type=2 #478
+2025/04/11-21:21:14.446 5f58 Delete type=2 #482

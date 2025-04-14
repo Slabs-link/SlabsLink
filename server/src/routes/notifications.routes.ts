@@ -8,7 +8,8 @@ import {
   updateNotification,
   deleteNotification,
   createNotificationFromTemplate,
-  createAppointmentNotification
+  createAppointmentNotification,
+  resendNotification
 } from '../controllers/notifications-sqlite.controller';
 
 const router = Router();
@@ -40,5 +41,8 @@ router.put('/:id', updateNotification);
 
 // DELETE /api/notifications/:id
 router.delete('/:id', deleteNotification);
+
+// POST /api/notifications/:id/resend - Resend a notification
+router.post('/:id/resend', resendNotification);
 
 export default router;

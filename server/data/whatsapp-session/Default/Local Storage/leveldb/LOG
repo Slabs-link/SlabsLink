@@ -1,0 +1,9 @@
+2025/04/11-23:05:04.069 8150 Reusing MANIFEST C:\Users\Ciro Latela\Desktop\SlabsLink\server\data\whatsapp-session\Default\Local Storage\leveldb/MANIFEST-000001
+2025/04/11-23:05:04.093 8150 Recovering log #3
+2025/04/11-23:05:04.114 8150 Reusing old log C:\Users\Ciro Latela\Desktop\SlabsLink\server\data\whatsapp-session\Default\Local Storage\leveldb/000003.log 
+2025/04/11-23:10:23.041 9714 Level-0 table #5: started
+2025/04/11-23:10:23.049 9714 Level-0 table #5: 17363 bytes OK
+2025/04/11-23:10:23.050 9714 Delete type=0 #3
+2025/04/11-23:45:12.171 9714 Level-0 table #7: started
+2025/04/11-23:45:12.178 9714 Level-0 table #7: 12707 bytes OK
+2025/04/11-23:45:12.181 9714 Delete type=0 #4

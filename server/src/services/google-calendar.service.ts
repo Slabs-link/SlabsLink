@@ -3812,6 +3812,76 @@ export class GoogleCalendarService {
         lastInsertRowid: result.lastInsertRowid,
         changes: result.changes
       });
+      
+      // Crea una notifica per l'appuntamento importato da Google Calendar
+      if (patientId) {
+        try {
+          // Ottieni il template per le notifiche di Google Calendar
+          const template = this.db.prepare(`
+            SELECT * FROM notification_templates 
+            WHERE type = 'google_calendar_confirmation' AND is_system = 1
+            LIMIT 1
+          `).get() as { id: number, content: string };
+          
+          if (template) {
+            // Ottieni i dettagli del paziente
+            const patient = this.db.prepare(`
+              SELECT first_name, last_name, phone FROM users 
+              WHERE id = ?
+            `).get(patientId) as { first_name: string, last_name: string, phone: string };
+            
+            if (patient) {
+              // Sostituisci i placeholder nel template
+              let message = template.content
+                .replace(/\{\{first_name\}\}|\{first_name\}/g, patient.first_name || '')
+                .replace(/\{\{last_name\}\}|\{last_name\}/g, patient.last_name || '')
+                .replace(/\{\{appointment_date\}\}|\{appointment_date\}/g, date)
+                .replace(/\{\{appointment_time\}\}|\{appointment_time\}/g, time);
+              
+              // Inserisci la notifica
+              const notificationInsert = this.db.prepare(`
+                INSERT INTO notifications (
+                  user_id, message, status, template_id, appointment_id
+                ) VALUES (?, ?, 'pending', ?, ?)
+              `);
+              
+              const notificationResult = notificationInsert.run(
+                patientId,
+                message,
+                template.id,
+                result.lastInsertRowid
+              );
+              
+              // Ottieni l'ID della notifica appena creata
+              const notificationId = notificationResult.lastInsertRowid;
+              
+              // Processa immediatamente la notifica (cambia lo stato da 'pending' a 'sent')
+              if (patient.phone) {
+                try {
+                  // Aggiorna lo stato della notifica a 'sent'
+                  this.db.prepare(`
+                    UPDATE notifications SET
+                      status = 'sent',
+                      sent_at = datetime('now'),
+                      updated_at = datetime('now')
+                    WHERE id = ?
+                  `).run(notificationId);
+                  
+                  this.log('info', `Notifica ID ${notificationId} creata per l'appuntamento importato da Google Calendar per l'utente ${patientId}`);
+                } catch (notificationError) {
+                  this.log('error', `Errore nell'invio automatico della notifica per l'appuntamento importato da Google Calendar: ${notificationError}`);
+                  // Non blocchiamo la creazione dell'appuntamento se l'invio della notifica fallisce
+                }
+              }
+            }
+          } else {
+            this.log('warn', 'Template per notifiche Google Calendar non trovato');
+          }
+        } catch (notificationError) {
+          this.log('error', `Errore nella creazione della notifica per l'appuntamento importato da Google Calendar: ${notificationError}`);
+          // Non blocchiamo la creazione dell'appuntamento se la creazione della notifica fallisce
+        }
+      }
 
       return {
         id: result.lastInsertRowid ? Number(result.lastInsertRowid) : 0,
