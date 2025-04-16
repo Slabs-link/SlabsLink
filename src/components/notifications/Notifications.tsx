@@ -281,9 +281,13 @@ const Notifications: React.FC = () => {
   };
 
   // Funzione per caricare gli appuntamenti
-  const fetchAppointments = async () => {
+  const fetchAppointments = async (userId = '') => {
     try {
-      const response = await axios.get('http://localhost:3001/api/appointments');
+      let url = 'http://localhost:3001/api/appointments';
+      if (userId) {
+        url += `?patient_id=${userId}`;
+      }
+      const response = await axios.get(url);
       setAppointments(response.data);
     } catch (error) {
       console.error('Error fetching appointments:', error);
@@ -295,10 +299,24 @@ const Notifications: React.FC = () => {
     fetchPatients();
     fetchAppointments();
   }, []);
+  
+  // Stato per tenere traccia se il template selezionato contiene variabili di appuntamento
+  const [hasAppointmentVariables, setHasAppointmentVariables] = useState(false);
+  // Stato per gli appuntamenti filtrati per utente
+  const [filteredAppointments, setFilteredAppointments] = useState<any[]>([]);
 
   // Gestione del dialogo per inviare una nuova notifica
   const handleOpenSendDialog = () => {
     setOpenSendDialog(true);
+    setSelectedTemplate('');
+    setTemplateVariables({});
+    setRequiredVariables([]);
+    setHasAppointmentVariables(false);
+    setUseTemplate(false);
+    setNewNotification({
+      patient_id: '',
+      message: ''
+    });
   };
 
   const handleCloseSendDialog = () => {
@@ -307,6 +325,10 @@ const Notifications: React.FC = () => {
       patient_id: '',
       message: ''
     });
+    setSelectedTemplate('');
+    setTemplateVariables({});
+    setRequiredVariables([]);
+    setHasAppointmentVariables(false);
   };
 
   // Gestione del dialogo per eliminare una notifica
@@ -393,6 +415,80 @@ const Notifications: React.FC = () => {
     }
   };
 
+  // Funzione per gestire il cambio di utente e caricare i suoi appuntamenti
+  const handleUserChange = (userId: string) => {
+    setNewNotification(prev => ({ ...prev, patient_id: userId }));
+    if (userId) {
+      fetchAppointments(userId);
+    } else {
+      setFilteredAppointments([]);
+    }
+  };
+  
+  // Funzione per gestire il cambio di template
+  const handleTemplateChange = (event: SelectChangeEvent<number | string>) => {
+    const templateId = event.target.value as number | '';
+    setSelectedTemplate(templateId);
+    
+    if (templateId === '') {
+      setRequiredVariables([]);
+      setTemplateVariables({});
+      setHasAppointmentVariables(false);
+      return;
+    }
+    
+    const template = templates.find(t => t.id === templateId);
+    if (!template) return;
+    
+    // Estrai le variabili dal contenuto del template
+    const regex = /\{\{([^}]+)\}\}/g;
+    const matches = template.content.matchAll(regex);
+    const variables: string[] = [];
+    
+    for (const match of matches) {
+      if (!variables.includes(match[1])) {
+        variables.push(match[1]);
+      }
+    }
+    
+    setRequiredVariables(variables);
+    
+    // Controlla se ci sono variabili relative agli appuntamenti
+    const appointmentVars = ['appointment_title', 'appointment_date', 'appointment_time', 'appointment_id'];
+    const hasAppVars = variables.some(v => appointmentVars.includes(v));
+    setHasAppointmentVariables(hasAppVars);
+    
+    // Resetta le variabili del template
+    setTemplateVariables({});
+  };
+  
+  // Funzione per gestire il cambio di valore delle variabili
+  const handleVariableChange = (variable: string, value: string) => {
+    setTemplateVariables(prev => ({
+      ...prev,
+      [variable]: value
+    }));
+  };
+  
+  // Funzione per gestire la selezione di un appuntamento
+  const handleAppointmentSelect = (appointmentId: string) => {
+    const appointment = appointments.find(a => a.id.toString() === appointmentId);
+    if (appointment) {
+      // Formatta la data per una migliore leggibilità
+      const formattedDate = new Date(appointment.appointment_date || appointment.date).toLocaleDateString('it-IT', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      });
+      
+      // Aggiorna tutte le variabili relative all'appuntamento
+      handleVariableChange('appointment_id', appointmentId);
+      handleVariableChange('appointment_title', appointment.title || '');
+      handleVariableChange('appointment_date', formattedDate);
+      handleVariableChange('appointment_time', appointment.appointment_time || appointment.time || '');
+    }
+  };
+  
   // Funzione per elaborare tutte le notifiche in attesa o quelle selezionate
   const handleProcessPendingNotifications = async () => {
     try {
@@ -712,8 +808,8 @@ const Notifications: React.FC = () => {
     return initialVariables;
   };
   
-  // Gestione del cambio template
-  const handleTemplateChange = (event: SelectChangeEvent<number>, child: React.ReactNode) => {
+  // Gestione del cambio template (seconda implementazione)
+  const handleTemplateChangeAdvanced = (event: SelectChangeEvent<number>, child: React.ReactNode) => {
     const templateId = event.target.value as number;
     setSelectedTemplate(templateId);
     
@@ -727,19 +823,35 @@ const Notifications: React.FC = () => {
         const initialVariables = initializeTemplateVariables(variables);
         setTemplateVariables(initialVariables);
         
+        // Controlla se ci sono variabili relative agli appuntamenti
+        const appointmentVars = ['appointment_title', 'appointment_date', 'appointment_time', 'appointment_id'];
+        const hasAppVars = variables.some(v => appointmentVars.includes(v));
+        
+        // Imposta sempre a true per mostrare la select degli appuntamenti quando è selezionato un template
+        setHasAppointmentVariables(true);
+        
         // Se il template è per modifica o cancellazione appuntamento, carica gli appuntamenti
         if (template.type === 'appointment_update' || template.type === 'appointment_cancellation') {
           fetchAppointments();
+        }
+        
+        // Aggiorna gli appuntamenti filtrati se c'è un utente selezionato
+        if (newNotification.patient_id) {
+          const patientAppointments = appointments.filter(a => 
+            a.patient_id.toString() === newNotification.patient_id
+          );
+          setFilteredAppointments(patientAppointments);
         }
       }
     } else {
       setRequiredVariables([]);
       setTemplateVariables({});
+      setHasAppointmentVariables(false);
     }
   };
   
-  // Gestione del cambio variabile
-  const handleVariableChange = (variable: string, value: string) => {
+  // Gestione del cambio variabile (seconda implementazione)
+  const handleVariableChangeAdvanced = (variable: string, value: string) => {
     setTemplateVariables(prev => ({
       ...prev,
       [variable]: value
@@ -749,6 +861,14 @@ const Notifications: React.FC = () => {
   // Funzione per inviare una notifica con template
   const handleSendNotificationWithTemplate = async () => {
     try {
+      console.log('🔄 [INVIO NOTIFICA CON TEMPLATE] Inizio processo di invio notifica con template');
+      console.log('📋 Dati notifica:', {
+        user_id: newNotification.patient_id,
+        template_id: selectedTemplate,
+        variables: templateVariables,
+        appointment_id: appointments.find(a => a.patient_id === newNotification.patient_id)?.id || null
+      });
+      
       setNotification({
         open: true,
         message: 'Invio in corso...',
@@ -756,10 +876,13 @@ const Notifications: React.FC = () => {
       });
 
       // Ottieni il numero di telefono dell'utente
+      console.log(`🔍 Recupero numero di telefono per l'utente ID: ${newNotification.patient_id}`);
       const userResponse = await axios.get(`http://localhost:3001/api/users/${newNotification.patient_id}`);
+      console.log('✅ Risposta API utente:', userResponse.data);
       const phoneNumber = userResponse.data.phone;
       
       if (!phoneNumber) {
+        console.error('❌ Utente senza numero di telefono');
         setNotification({
           open: true,
           message: 'L\'utente selezionato non ha un numero di telefono',
@@ -767,20 +890,29 @@ const Notifications: React.FC = () => {
         });
         return;
       }
+      console.log(`📱 Numero di telefono trovato: ${phoneNumber}`);
 
       // Salva la notifica nel database
-      const response = await axios.post('http://localhost:3001/api/notifications/template', {
+      console.log('💾 Salvataggio notifica nel database...');
+      const payload = {
         user_id: newNotification.patient_id,
         template_id: selectedTemplate,
         variables: templateVariables,
         appointment_id: appointments.find(a => a.patient_id === newNotification.patient_id)?.id || null
-      });
+      };
+      console.log('📤 Payload richiesta:', payload);
+      
+      const response = await axios.post('http://localhost:3001/api/notifications/template', payload);
+      console.log('📥 Risposta salvataggio notifica:', response.data);
 
       // Ottieni il template e sostituisci le variabili
+      console.log(`🔍 Recupero template ID: ${selectedTemplate}`);
       const template = templates.find(t => t.id === selectedTemplate);
       if (template) {
+        console.log('✅ Template trovato:', template.name);
         const patient = patients.find(p => p.id.toString() === newNotification.patient_id);
         if (patient) {
+          console.log('👤 Paziente trovato:', `${patient.first_name} ${patient.last_name}`);
           // Prepara le variabili per la sostituzione
           const variables = {
             ...templateVariables,
@@ -788,20 +920,32 @@ const Notifications: React.FC = () => {
             last_name: patient.last_name,
             patient_name: `${patient.first_name} ${patient.last_name}`
           };
+          console.log('🔄 Variabili per sostituzione:', variables);
           
           // Sostituisci le variabili nel template
+          console.log('🔄 Sostituzione variabili nel template...');
           const message = notificationService.replaceTemplateVariables(template.content, variables);
+          console.log('📝 Messaggio finale:', message);
           
           // Invia la notifica tramite WhatsApp
+          console.log('📲 Invio notifica WhatsApp...');
           await notificationService.sendWhatsAppNotification(phoneNumber, message);
+          console.log('✅ Notifica WhatsApp inviata con successo');
           
           // Aggiorna lo stato della notifica nel database
           if (response.data && response.data.id) {
+            console.log(`🔄 Aggiornamento stato notifica ID: ${response.data.id}`);
             await axios.post(`http://localhost:3001/api/notifications/process/${response.data.id}`);
+            console.log('✅ Stato notifica aggiornato con successo');
           }
+        } else {
+          console.error('❌ Paziente non trovato');
         }
+      } else {
+        console.error(`❌ Template ID ${selectedTemplate} non trovato`);
       }
 
+      console.log('✅ Processo di invio notifica completato con successo');
       setNotification({
         open: true,
         message: 'Notifica inviata con successo',
@@ -812,7 +956,8 @@ const Notifications: React.FC = () => {
 
       fetchNotifications();
     } catch (error) {
-      console.error('Error sending notification with template:', (error as { response?: { data: unknown } })?.response?.data || error);
+      console.error('❌ Errore durante l\'invio della notifica con template:', error);
+      console.error('Dettagli errore:', (error as { response?: { data: unknown } })?.response?.data || error);
   
       setNotification({
         open: true,
@@ -825,11 +970,15 @@ const Notifications: React.FC = () => {
   // Funzione per inviare una notifica
   const handleSendNotification = async () => {
     if (useTemplate && selectedTemplate) {
+      console.log('🔄 [INVIO NOTIFICA] Rilevato template, reindirizzamento a handleSendNotificationWithTemplate');
       await handleSendNotificationWithTemplate();
       return;
     }
     
     try {
+      console.log('🔄 [INVIO NOTIFICA SEMPLICE] Inizio processo di invio notifica semplice');
+      console.log('📋 Dati notifica:', newNotification);
+      
       setNotification({
         open: true,
         message: 'Invio in corso...',
@@ -837,10 +986,13 @@ const Notifications: React.FC = () => {
       });
 
       // Ottieni il numero di telefono dell'utente
+      console.log(`🔍 Recupero numero di telefono per l'utente ID: ${newNotification.patient_id}`);
       const userResponse = await axios.get(`http://localhost:3001/api/users/${newNotification.patient_id}`);
+      console.log('✅ Risposta API utente:', userResponse.data);
       const phoneNumber = userResponse.data.phone;
       
       if (!phoneNumber) {
+        console.error('❌ Utente senza numero di telefono');
         setNotification({
           open: true,
           message: 'L\'utente selezionato non ha un numero di telefono',
@@ -848,18 +1000,28 @@ const Notifications: React.FC = () => {
         });
         return;
       }
+      console.log(`📱 Numero di telefono trovato: ${phoneNumber}`);
 
       // Salva la notifica nel database
+      console.log('💾 Salvataggio notifica nel database...');
+      console.log('📤 Payload richiesta:', newNotification);
       const response = await axios.post('http://localhost:3001/api/notifications', newNotification);
+      console.log('📥 Risposta salvataggio notifica:', response.data);
 
       // Invia la notifica tramite WhatsApp
+      console.log('📲 Invio notifica WhatsApp...');
+      console.log('📝 Messaggio:', newNotification.message);
       await notificationService.sendWhatsAppNotification(phoneNumber, newNotification.message);
+      console.log('✅ Notifica WhatsApp inviata con successo');
       
       // Aggiorna lo stato della notifica nel database
       if (response.data && response.data.id) {
+        console.log(`🔄 Aggiornamento stato notifica ID: ${response.data.id}`);
         await axios.post(`http://localhost:3001/api/notifications/process/${response.data.id}`);
+        console.log('✅ Stato notifica aggiornato con successo');
       }
 
+      console.log('✅ Processo di invio notifica completato con successo');
       setNotification({
         open: true,
         message: 'Notifica inviata con successo',
@@ -870,7 +1032,8 @@ const Notifications: React.FC = () => {
 
       fetchNotifications();
     } catch (error) {
-      console.error('Error sending notification:', error);
+      console.error('❌ Errore durante l\'invio della notifica:', error);
+      console.error('Dettagli errore:', (error as { response?: { data: unknown } })?.response?.data || error);
   
       setNotification({
         open: true,
@@ -1290,7 +1453,7 @@ const Notifications: React.FC = () => {
               <Select
                 value={newNotification.patient_id}
                 label="Utente"
-                onChange={(e) => setNewNotification(prev => ({ ...prev, patient_id: e.target.value as string }))}
+                onChange={(e) => handleUserChange(e.target.value as string)}
               >
                 {patients.map((patient) => (
                   <MenuItem key={patient.id} value={patient.id.toString()}>
@@ -1319,7 +1482,7 @@ const Notifications: React.FC = () => {
                   <Select
                     value={selectedTemplate}
                     label="Template"
-                    onChange={handleTemplateChange}
+                    onChange={handleTemplateChangeAdvanced}
                   >
                     <MenuItem value="">
                       <em>Seleziona un template</em>
@@ -1337,59 +1500,42 @@ const Notifications: React.FC = () => {
                   )}
                 </FormControl>
                 
-                {requiredVariables.length > 0 && (
-                  <Box sx={{ mb: 2 }}>
-                    <Typography variant="subtitle1" gutterBottom>
-                      Variabili del template
-                    </Typography>
-                    {/* Se il template è per modifica o cancellazione appuntamento, mostra la select per scegliere l'appuntamento */}
-                {(templates.find(t => t.id === selectedTemplate)?.type === 'appointment_update' || 
-                 templates.find(t => t.id === selectedTemplate)?.type === 'appointment_cancellation') && (
+                {/* Mostra la select per gli appuntamenti quando è selezionato un template e un utente */}
+                {selectedTemplate && newNotification.patient_id && (
                   <FormControl fullWidth sx={{ mb: 2 }}>
                     <InputLabel>Seleziona Appuntamento</InputLabel>
                     <Select
                       value={templateVariables['appointment_id'] || ''}
                       label="Seleziona Appuntamento"
-                      onChange={(e) => {
-                        const appointmentId = e.target.value;
-                        const appointment = appointments.find(a => a.id.toString() === appointmentId);
-                        if (appointment) {
-                          // Format date for better readability
-                          const formattedDate = new Date(appointment.date).toLocaleDateString('it-IT', {
-                            day: '2-digit',
-                            month: '2-digit',
-                            year: 'numeric'
-                          });
-                          
-                          // Update all appointment related variables
-                          handleVariableChange('appointment_id', appointmentId);
-                          handleVariableChange('appointment_title', appointment.title);
-                          handleVariableChange('appointment_date', formattedDate);
-                          handleVariableChange('appointment_time', appointment.time);
-                        }
-                      }}
+                      onChange={(e) => handleAppointmentSelect(e.target.value as string)}
                     >
                       <MenuItem value="">
                         <em>Seleziona un appuntamento</em>
                       </MenuItem>
                       {appointments.map((appointment) => (
                         <MenuItem key={appointment.id} value={appointment.id.toString()}>
-                          {appointment.title} - {new Date(appointment.date).toLocaleDateString('it-IT')} {appointment.time}
+                          {appointment.title || 'Appuntamento'} - {new Date(appointment.appointment_date || appointment.date).toLocaleDateString('it-IT')} {appointment.appointment_time || appointment.time}
                         </MenuItem>
                       ))}
                     </Select>
                     <FormHelperText>
-                      Seleziona un appuntamento esistente per compilare automaticamente i campi
+                      Seleziona un appuntamento per compilare automaticamente i campi relativi
                     </FormHelperText>
                   </FormControl>
                 )}
                 
+                {requiredVariables.length > 0 && (
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="subtitle1" gutterBottom>
+                      Variabili del template
+                    </Typography>
+                
                 {requiredVariables.map((variable) => {
                   // Nascondi i campi che vengono compilati automaticamente quando si seleziona un appuntamento
-                  if ((templates.find(t => t.id === selectedTemplate)?.type === 'appointment_update' || 
-                      templates.find(t => t.id === selectedTemplate)?.type === 'appointment_cancellation') && 
+                  if (hasAppointmentVariables && 
                       (variable === 'appointment_title' || variable === 'appointment_date' || 
-                       variable === 'appointment_time') && templateVariables['appointment_id']) {
+                       variable === 'appointment_time' || variable === 'appointment_id') && 
+                       templateVariables['appointment_id']) {
                     return null;
                   }
                   
@@ -1401,7 +1547,7 @@ const Notifications: React.FC = () => {
                         label="Titolo appuntamento"
                         fullWidth
                         value={templateVariables[variable] || ''}
-                        onChange={(e) => handleVariableChange(variable, e.target.value)}
+                        onChange={(e) => handleVariableChangeAdvanced(variable, e.target.value)}
                         margin="dense"
                         placeholder="Es. Visita di controllo"
                         helperText="Inserisci il titolo o il tipo di appuntamento"
@@ -1414,7 +1560,7 @@ const Notifications: React.FC = () => {
                         label="Data appuntamento"
                         fullWidth
                         value={templateVariables[variable] || ''}
-                        onChange={(e) => handleVariableChange(variable, e.target.value)}
+                        onChange={(e) => handleVariableChangeAdvanced(variable, e.target.value)}
                         margin="dense"
                         placeholder="Es. 01/01/2023"
                         helperText="Inserisci la data dell'appuntamento (formato: GG/MM/AAAA)"
@@ -1427,7 +1573,7 @@ const Notifications: React.FC = () => {
                         label="Ora appuntamento"
                         fullWidth
                         value={templateVariables[variable] || ''}
-                        onChange={(e) => handleVariableChange(variable, e.target.value)}
+                        onChange={(e) => handleVariableChangeAdvanced(variable, e.target.value)}
                         margin="dense"
                         placeholder="Es. 15:30"
                         helperText="Inserisci l'ora dell'appuntamento (formato: HH:MM)"
@@ -1441,7 +1587,7 @@ const Notifications: React.FC = () => {
                         label={variable.replace(/_/g, ' ')}
                         fullWidth
                         value={templateVariables[variable] || ''}
-                        onChange={(e) => handleVariableChange(variable, e.target.value)}
+                        onChange={(e) => handleVariableChangeAdvanced(variable, e.target.value)}
                         margin="dense"
                       />
                     );

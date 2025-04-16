@@ -15,6 +15,7 @@ import settingsRoutes from './routes/settings.routes';
 import licenseRoutes from './routes/license.routes';
 import backupsRoutes from './routes/backups.routes';
 import userFilesRoutes from './routes/user-files.routes';
+import whatsappRoutes from './routes/whatsapp.routes';
 import { googleCalendarRoutes } from './routes/google-calendar.routes';
 import { checkDatabaseConnection, getDatabase } from './config/database-sqlite';
 import { runSqliteMigrations } from './db/migrations/sqlite-migrations';
@@ -68,6 +69,8 @@ app.use('/api/google-calendar', googleCalendarRoutes);
 app.use('/api/backups', backupsRoutes);
 // Register user files routes
 app.use('/api/user-files', userFilesRoutes);
+// Register WhatsApp routes
+app.use('/api/whatsapp', whatsappRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -226,15 +229,9 @@ const startServer = async () => {
                 throw new Error(`L'utente ${typedNotification.user_id} non ha un numero di telefono valido`);
               }
               
-              // Invia la notifica WhatsApp
-              let success = false;
-              if (useWhatsAppWeb) {
-                // Utilizza WhatsApp Web per inviare il messaggio
-                success = await WhatsAppWebService.sendMessage(typedNotification.phone, typedNotification.message, true);
-              } else {
-                // Utilizza WhatsApp Business API come fallback
-                success = await WhatsAppService.sendMessage(typedNotification.phone, typedNotification.message);
-              }
+              // Invia la notifica WhatsApp - Invio singolo senza tentativi multipli
+              // Utilizziamo solo WhatsApp Web con Chrome for Testing senza fallback
+              const success = await WhatsAppWebService.sendMessage(typedNotification.phone, typedNotification.message, true);
               
               if (success) {
                 // Aggiorna lo stato della notifica a 'sent'

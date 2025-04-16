@@ -34,72 +34,78 @@ export class NotificationService {
   }
 
   /**
-   * Invia una notifica WhatsApp aprendo WhatsApp Web o usando l'API Business
-   * Con supporto per l'automazione dell'invio tramite Puppeteer
+   * Invia una notifica WhatsApp utilizzando l'API del server
+   * Questo metodo utilizza l'endpoint API del server che gestisce l'automazione WhatsApp
+   * invece di tentare di utilizzare Puppeteer direttamente nel browser
    */
   public async sendWhatsAppNotification(phoneNumber: string, message: string, autoSend: boolean = false): Promise<void> {
+    console.log('🔄 [WHATSAPP SERVICE] Inizio processo di invio WhatsApp');
+    console.log(`📱 Numero di telefono originale: ${phoneNumber}`);
+    console.log(`📝 Messaggio originale: ${message}`);
+    console.log(`🔄 Modalità invio automatico: ${autoSend ? 'Sì' : 'No'}`);
+    
+    // Verifica se il messaggio contiene placeholder non sostituiti
+    const placeholderRegex = /\{(first_name|last_name|appointment_date|appointment_time)\}/g;
+    const matches = message.match(placeholderRegex);
+    if (matches && matches.length > 0) {
+      console.error(`❌ Messaggio contiene placeholder non sostituiti: ${matches.join(', ')}`);
+      throw new Error(`Impossibile inviare il messaggio: contiene placeholder non sostituiti ${matches.join(', ')}. Assicurati di selezionare un utente e un appuntamento validi.`);
+    }
+    
     // Formatta il numero di telefono rimuovendo spazi e caratteri non numerici
     let formattedNumber = phoneNumber.replace(/\s+/g, '').replace(/[^0-9+]/g, '');
     
     // Aggiungi il prefisso italiano +39 se non è già presente
     if (!formattedNumber.startsWith('+')) {
       formattedNumber = '+39' + formattedNumber;
+      console.log(`📱 Aggiunto prefisso +39, numero formattato: ${formattedNumber}`);
+    } else {
+      console.log(`📱 Numero già con prefisso, formattato: ${formattedNumber}`);
     }
     
     // Verifica se è stato impostato WhatsApp Business
+    console.log('🔍 Verifica impostazioni WhatsApp Business...');
     const settings = await this.getWhatsAppSettings();
+    console.log('✅ Impostazioni WhatsApp recuperate:', settings);
     
     if (settings.useBusinessApi && settings.apiToken) {
+      console.log('🔄 Utilizzo API WhatsApp Business');
       // Usa l'API di WhatsApp Business
       return this.sendWhatsAppBusinessNotification(formattedNumber, message);
     } else {
-      // Usa WhatsApp Web
+      console.log('🔄 Utilizzo WhatsApp Web tramite API del server');
+      // Usa WhatsApp Web tramite l'API del server
       // Sostituisci il nome dell'azienda nel messaggio
       const messageWithCompanyName = message.replace(/SlabsLink/g, this.companyName);
+      console.log(`📝 Messaggio con nome azienda sostituito: ${messageWithCompanyName}`);
       
-      if (autoSend) {
-        // Usa il servizio di automazione per inviare il messaggio
-        try {
-          // Importa dinamicamente il servizio di automazione
-          const { whatsAppAutomationService } = await import('./whatsapp-automation.service');
-          
-          // Inizializza il servizio se non è già inizializzato
-          if (!whatsAppAutomationService.isReady()) {
-            const initialized = await whatsAppAutomationService.initialize();
-            if (!initialized) {
-              throw new Error('Impossibile inizializzare il servizio di automazione WhatsApp');
-            }
-          }
-          
-          // Naviga alla chat WhatsApp con il messaggio precompilato
-          const navigated = await whatsAppAutomationService.navigateToWhatsAppChat(formattedNumber, messageWithCompanyName);
-          if (!navigated) {
-            throw new Error('Impossibile navigare alla chat WhatsApp');
-          }
-          
-          // Attendi un momento per assicurarsi che la pagina sia completamente caricata
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          
-          // Invia il messaggio
-          const sent = await whatsAppAutomationService.sendMessage();
-          if (!sent) {
-            throw new Error('Impossibile inviare il messaggio WhatsApp');
-          }
-          
-          console.log('Messaggio WhatsApp inviato automaticamente con successo');
-        } catch (error) {
-          console.error('Errore durante l\'invio automatico del messaggio WhatsApp:', error);
-          
-          // In caso di errore, apri WhatsApp Web normalmente
-          const whatsappUrl = `https://web.whatsapp.com/send?phone=${formattedNumber}&text=${encodeURIComponent(messageWithCompanyName)}`;
-          window.open(whatsappUrl, '_blank');
-        }
-      } else {
-        // Crea l'URL per WhatsApp Web
-        const whatsappUrl = `https://web.whatsapp.com/send?phone=${formattedNumber}&text=${encodeURIComponent(messageWithCompanyName)}`;
+      try {
+        // Chiama l'endpoint API del server per inviare il messaggio WhatsApp
+        console.log('📤 Invio richiesta al server WhatsApp...');
+        console.log('📤 Payload:', {
+          phoneNumber: formattedNumber,
+          message: messageWithCompanyName,
+          autoSend: autoSend
+        });
         
-        // Apri WhatsApp Web in una nuova finestra
-        window.open(whatsappUrl, '_blank');
+        const response = await axios.post(`${this.apiBaseUrl}/whatsapp/send`, {
+          phoneNumber: formattedNumber,
+          message: messageWithCompanyName,
+          autoSend: autoSend
+        });
+        
+        console.log('📥 Risposta server WhatsApp:', response.data);
+        
+        if (!response.data.success) {
+          console.error('❌ Errore restituito dal server WhatsApp:', response.data.message);
+          throw new Error(response.data.message || 'Errore durante l\'invio del messaggio WhatsApp');
+        }
+        
+        console.log(autoSend ? '✅ Messaggio WhatsApp inviato automaticamente con successo' : '✅ Chat WhatsApp aperta con successo, in attesa di invio manuale');
+      } catch (error) {
+        console.error('❌ Errore durante l\'invio del messaggio WhatsApp:', error);
+        console.error('Dettagli errore:', (error as { response?: { data: unknown } })?.response?.data || error);
+        throw new Error(`Errore durante l'invio del messaggio WhatsApp: ${error instanceof Error ? error.message : 'Errore sconosciuto'}`);
       }
     }
   }
@@ -137,6 +143,7 @@ export class NotificationService {
 
   /**
    * Sostituisce le variabili nel template con i valori forniti
+   * Supporta sia il formato {{variable}} che il formato {variable}
    */
   public replaceTemplateVariables(template: string, variables: NotificationVariables): string {
     let result = template;
@@ -154,6 +161,12 @@ export class NotificationService {
     for (const [key, value] of Object.entries(variablesWithClinic)) {
       const regex = new RegExp(`\{\{${key}\}\}`, 'g');
       result = result.replace(regex, value);
+    }
+    
+    // Sostituisci anche le variabili nel formato {variable} (formato vecchio)
+    for (const [key, value] of Object.entries(variablesWithClinic)) {
+      const oldFormatRegex = new RegExp(`\{${key}\}`, 'g');
+      result = result.replace(oldFormatRegex, value);
     }
     
     return result;

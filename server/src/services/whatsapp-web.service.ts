@@ -24,6 +24,8 @@ class WhatsAppWebService {
   private sessionDataPath: string = path.resolve(process.cwd(), 'data', 'whatsapp-session');
   private authCheckInterval: NodeJS.Timeout | null = null;
   private maxAuthWaitTime = 7 * 60 * 1000; // 7 minuti in millisecondi
+  private isReinitializing = false; // Flag per prevenire invii multipli durante la reinizializzazione
+  private sentMessages: Map<string, number> = new Map(); // Mappa per tracciare i messaggi inviati recentemente (chiave: numero+messaggio, valore: timestamp)
 
   /**
    * Ottiene le impostazioni di WhatsApp dal database
@@ -158,6 +160,10 @@ class WhatsAppWebService {
         await this.page.evaluate(() => document.title);
       } catch (error) {
         console.error('Pagina non più valida, tentativo di reinizializzazione:', error);
+        
+        // Imposta il flag di reinizializzazione per prevenire invii duplicati
+        this.isReinitializing = true;
+        
         // Chiudi il browser se esiste
         if (this.browser) {
           try {
@@ -175,6 +181,10 @@ class WhatsAppWebService {
         
         // Reinizializza il browser
         const initialized = await this.initialize();
+        
+        // Reimposta il flag di reinizializzazione
+        this.isReinitializing = false;
+        
         if (!initialized) {
           console.error('Impossibile reinizializzare il browser');
           return false;
@@ -197,55 +207,11 @@ class WhatsAppWebService {
         }
       }
       
-      // Funzione di debug per stampare informazioni sugli elementi trovati
-      const debugElementInfo = async (selector: string, description: string) => {
-        try {
-          const element = await this.page?.$eval(selector, (el) => ({
-            exists: true,
-            tagName: el.tagName,
-            className: el.className,
-            id: el.id,
-            textContent: el.textContent?.substring(0, 50) || ''
-          })).catch(() => ({ exists: false }));
-          
-          // Type guard per verificare la struttura completa dell'oggetto
-          const hasFullStructure = (obj: any): obj is { exists: boolean; tagName: string; className: string; id: string; textContent: string } => {
-            if (!obj || typeof obj !== 'object') return false;
-            const requiredProps = ['exists', 'tagName', 'className', 'id', 'textContent'];
-            return requiredProps.every(prop => prop in obj);
-          };
-          
-          if (!hasFullStructure(element)) {
-            console.log(`DEBUG [${description}]: Elemento non ha struttura completa`);
-            return false;
-          }
-          
-          console.log(`DEBUG [${description}]: ${element.exists ? 'TROVATO' : 'NON TROVATO'}`, 
-            element.exists ? `(${element.tagName}, classe: ${element.className})` : '');
-          
-          return element?.exists || false;
-        } catch (error) {
-          console.log(`DEBUG [${description}]: Errore durante la ricerca`, error);
-          return false;
-        }
-      };
-      
       // Verifica se è presente il QR code (utente non autenticato)
-      const qrCodeSelectors = [
-        'div[data-testid="qrcode"]',
-        'canvas[aria-label="Scan me!"]',
-        'div[data-ref]',  // Alcuni QR code hanno questo attributo
-        'div.landing-wrapper'
-      ];
-      
-      let qrCodeFound = false;
-      for (const selector of qrCodeSelectors) {
-        const found = await debugElementInfo(selector, `QR Code (${selector})`);
-        if (found) {
-          qrCodeFound = true;
-          break;
-        }
-      }
+      const qrCodeFound = await this.page.evaluate(() => {
+        return !!document.querySelector('div[data-testid="qrcode"]') || 
+               !!document.querySelector('canvas[aria-label="Scan me!"]');
+      });
       
       if (qrCodeFound) {
         console.log('Utente non autenticato su WhatsApp Web, QR code presente');
@@ -253,86 +219,24 @@ class WhatsAppWebService {
         return false;
       }
       
-      // Selettori per elementi che indicano autenticazione
-      const authSelectors = [
-        // Selettori principali
-        { selector: 'div[data-testid="chat-list"]', description: 'Lista chat' },
-        { selector: 'div[data-testid="conversation-panel-wrapper"]', description: 'Pannello conversazione' },
-        { selector: 'div[data-testid="chat-new"]', description: 'Pulsante nuova chat' },
-        { selector: 'div[data-testid="drawer-left"]', description: 'Pannello laterale' },
-        { selector: 'div[data-testid="conversation-compose-box"]', description: 'Box composizione messaggio' },
+      // Verifica se l'utente è autenticato cercando elementi chiave dell'interfaccia
+      const isAuthenticated = await this.page.evaluate(() => {
+        // Verifica la presenza di elementi che indicano autenticazione
+        const hasFooter = !!document.querySelector('footer');
+        const hasTextbox = !!document.querySelector('div[role="textbox"]');
+        const hasButton = !!document.querySelector('button[aria-label="Invia"]');
         
-        // Selettori aggiuntivi per migliorare il rilevamento
-        { selector: 'div[data-testid="default-user"]', description: 'Utente predefinito' },
-        { selector: 'div[data-testid="menu-bar-menu"]', description: 'Menu principale' },
-        { selector: 'div[data-testid="status-v3-unread"]', description: 'Stato non letto' },
-        { selector: 'div[data-testid="cell-frame-container"]', description: 'Contenitore cella' },
-        { selector: 'div[data-testid="search-input"]', description: 'Input di ricerca' },
-        { selector: 'span[data-testid="menu"]', description: 'Menu' },
-        { selector: 'span[data-testid="intro-text"]', description: 'Testo introduttivo' },
-        { selector: 'div[data-testid="status-v3"]', description: 'Stato v3' }
-      ];
-      
-      // Verifica la presenza di elementi che indicano autenticazione
-      let authElementFound = false;
-      const foundElements = [];
-      
-      for (const { selector, description } of authSelectors) {
-        const found = await debugElementInfo(selector, description);
-        if (found) {
-          authElementFound = true;
-          foundElements.push(description);
-        }
-      }
-      
-      if (authElementFound) {
-        console.log(`Utente autenticato su WhatsApp Web. Elementi trovati: ${foundElements.join(', ')}`);
-        this.isAuthenticated = true;
-        
-        // Se l'autenticazione è avvenuta con successo, processa le notifiche in attesa
-        if (!navigate) { // Solo quando viene chiamato durante il controllo periodico
-          await this.processAuthenticationRequiredNotifications();
-          
-          // Forza l'elaborazione immediata delle notifiche in attesa
-          this.triggerPendingNotificationsProcessing();
-        }
-        
-        return true;
-      }
-      
-      // Verifica aggiuntiva: controlla se ci sono elementi con ruoli specifici di WhatsApp Web
-      console.log('Esecuzione verifica alternativa per elementi dell\'interfaccia WhatsApp...');
-      const whatsappElements = await this.page.evaluate(() => {
-        // Cerca elementi tipici dell'interfaccia di WhatsApp Web
-        const selectors = [
-          'div[role="application"]', // Applicazione principale
-          'div[role="navigation"]',  // Pannello di navigazione
-          'div[role="complementary"]', // Pannello laterale
-          'div[role="main"]',        // Contenuto principale
-          'div[role="button"]',      // Pulsanti
-          'div[role="textbox"]',     // Area di testo
-          'div[role="row"]',         // Righe (chat)
-          'div[role="gridcell"]'     // Celle (messaggi)
-        ];
-        
-        // Raccoglie informazioni su tutti i selettori trovati
-        const foundInfo: Record<string, number> = {};
-        selectors.forEach(selector => {
-          const elements = document.querySelectorAll(selector);
-          if (elements.length > 0) {
-            foundInfo[selector] = elements.length;
-          }
-        });
+        // Verifica anche classi specifiche di WhatsApp
+        const hasWhatsAppClasses = document.querySelectorAll('[class*="_"]').length > 0;
         
         return {
-          found: Object.keys(foundInfo).length > 0,
-          details: foundInfo
+          authenticated: hasFooter || hasTextbox || hasButton || hasWhatsAppClasses,
+          details: { hasFooter, hasTextbox, hasButton, hasWhatsAppClasses }
         };
       });
       
-      if (whatsappElements.found) {
-        console.log('Utente autenticato su WhatsApp Web (rilevamento alternativo)');
-        console.log('Elementi trovati:', JSON.stringify(whatsappElements.details, null, 2));
+      if (isAuthenticated.authenticated) {
+        console.log('Utente autenticato su WhatsApp Web', isAuthenticated.details);
         this.isAuthenticated = true;
         
         // Se l'autenticazione è avvenuta con successo, processa le notifiche in attesa
@@ -346,18 +250,11 @@ class WhatsAppWebService {
         return true;
       }
       
-      // Verifica finale: controlla classi specifiche di WhatsApp
+      // Verifica semplificata: controlla solo le classi specifiche di WhatsApp
       console.log('Esecuzione verifica finale per classi specifiche di WhatsApp...');
       const whatsappClasses = await this.page.evaluate(() => {
-        // Cerca elementi con classi specifiche di WhatsApp
-        const classPatterns = [
-          '_', // WhatsApp usa spesso classi che iniziano con underscore
-          'app', 
-          'two', 
-          'chat',
-          'message',
-          'pane'
-        ];
+        // Cerca elementi con classi specifiche di WhatsApp (solo underscore e app)
+        const classPatterns = ['_', 'app'];
         
         let foundAny = false;
         const counts: Record<string, number> = {};
@@ -393,62 +290,9 @@ class WhatsAppWebService {
         return true;
       }
       
-      // Verifica finale: analisi dell'HTML della pagina per trovare pattern tipici di WhatsApp Web
-      console.log('Esecuzione analisi HTML della pagina per rilevare pattern di WhatsApp Web...');
-      const htmlAnalysis = await this.page.evaluate(() => {
-        const html = document.documentElement.innerHTML;
-        
-        // Pattern tipici di WhatsApp Web quando l'utente è autenticato
-        const authPatterns = [
-          'WhatsApp Web', 
-          'WhatsApp works with', 
-          'Keep your phone connected',
-          'To reduce data usage',
-          'End-to-end encrypted'
-        ];
-        
-        // Pattern tipici della pagina di login/QR code
-        const loginPatterns = [
-          'To use WhatsApp on your computer',
-          'Use WhatsApp on Web',
-          'Scan the QR code',
-          'Keep me signed in'
-        ];
-        
-        const foundAuthPatterns = authPatterns.filter(pattern => html.includes(pattern));
-        const foundLoginPatterns = loginPatterns.filter(pattern => html.includes(pattern));
-        
-        return {
-          authPatternsFound: foundAuthPatterns.length > 0,
-          loginPatternsFound: foundLoginPatterns.length > 0,
-          authPatterns: foundAuthPatterns,
-          loginPatterns: foundLoginPatterns,
-          title: document.title
-        };
-      });
-      
-      console.log('Analisi HTML completata:', JSON.stringify(htmlAnalysis, null, 2));
-      
-      // Se troviamo pattern di autenticazione e non di login, consideriamo l'utente autenticato
-      if (htmlAnalysis.authPatternsFound && !htmlAnalysis.loginPatternsFound) {
-        console.log('Utente autenticato su WhatsApp Web (rilevamento pattern HTML)');
-        console.log('Pattern trovati:', htmlAnalysis.authPatterns.join(', '));
-        this.isAuthenticated = true;
-        
-        // Se l'autenticazione è avvenuta con successo, processa le notifiche in attesa
-        if (!navigate) { // Solo quando viene chiamato durante il controllo periodico
-          await this.processAuthenticationRequiredNotifications();
-          
-          // Forza l'elaborazione immediata delle notifiche in attesa
-          this.triggerPendingNotificationsProcessing();
-        }
-        
-        return true;
-      }
-      
       // Se non troviamo né il QR code né altri elementi che indicano autenticazione, consideriamo l'utente non autenticato
       console.log('Stato di autenticazione non determinabile, considerato non autenticato');
-      console.log('Titolo della pagina:', htmlAnalysis.title);
+      console.log('Titolo della pagina:', await this.page.title());
       this.isAuthenticated = false;
       return false;
     } catch (error) {
@@ -459,6 +303,51 @@ class WhatsAppWebService {
   }
 
   /**
+   * Pulisce i messaggi vecchi dalla mappa sentMessages
+   * Rimuove i messaggi inviati più di 5 minuti fa
+   */
+  private cleanupSentMessages(): void {
+    const now = Date.now();
+    const expirationTime = 5 * 60 * 1000; // 5 minuti in millisecondi
+    
+    for (const [key, timestamp] of this.sentMessages.entries()) {
+      if (now - timestamp > expirationTime) {
+        this.sentMessages.delete(key);
+      }
+    }
+  }
+  
+  /**
+   * Verifica se un messaggio è stato inviato recentemente per evitare duplicati
+   * @param phoneNumber Numero di telefono del destinatario
+   * @param message Contenuto del messaggio
+   * @returns true se il messaggio è stato inviato recentemente, false altrimenti
+   */
+  private isRecentlySent(phoneNumber: string, message: string): boolean {
+    // Crea una chiave unica per questo messaggio
+    const messageKey = `${phoneNumber}:${message}`;
+    
+    // Pulisci i messaggi vecchi
+    this.cleanupSentMessages();
+    
+    // Verifica se il messaggio è stato inviato recentemente
+    return this.sentMessages.has(messageKey);
+  }
+  
+  /**
+   * Registra un messaggio come inviato per evitare duplicati
+   * @param phoneNumber Numero di telefono del destinatario
+   * @param message Contenuto del messaggio
+   */
+  private markAsSent(phoneNumber: string, message: string): void {
+    // Crea una chiave unica per questo messaggio
+    const messageKey = `${phoneNumber}:${message}`;
+    
+    // Registra il messaggio con il timestamp corrente
+    this.sentMessages.set(messageKey, Date.now());
+  }
+  
+  /**
    * Reinizializza il browser e la pagina quando si verifica un errore di frame distaccato
    * @returns true se la reinizializzazione è avvenuta con successo, false altrimenti
    */
@@ -466,6 +355,9 @@ class WhatsAppWebService {
     console.log('Avvio reinizializzazione del browser dopo errore di frame distaccato...');
     
     try {
+      // Imposta il flag di reinizializzazione per prevenire invii duplicati
+      this.isReinitializing = true;
+      
       // Chiudi il browser se esiste
       if (this.browser) {
         try {
@@ -485,13 +377,18 @@ class WhatsAppWebService {
       const initialized = await this.initialize();
       if (!initialized) {
         console.error('Impossibile reinizializzare il browser');
+        this.isReinitializing = false; // Reimposta il flag anche in caso di errore
         return false;
       }
       
       console.log('Browser reinizializzato con successo');
+      
+      // Reimposta il flag di reinizializzazione
+      this.isReinitializing = false;
       return true;
     } catch (error) {
       console.error('Errore durante la reinizializzazione del browser:', error);
+      this.isReinitializing = false; // Reimposta il flag anche in caso di errore
       return false;
     }
   }
@@ -566,6 +463,9 @@ class WhatsAppWebService {
             console.error('Pagina non più valida durante il controllo di autenticazione:', pageError);
             pageValid = false;
             
+            // Imposta il flag di reinizializzazione per prevenire invii duplicati
+            this.isReinitializing = true;
+            
             // Tenta di reinizializzare il browser
             try {
               // Chiudi il browser se esiste
@@ -585,6 +485,10 @@ class WhatsAppWebService {
               
               // Reinizializza il browser
               const initialized = await this.initialize();
+              
+              // Reimposta il flag di reinizializzazione
+              this.isReinitializing = false;
+              
               if (!initialized) {
                 console.error('Impossibile reinizializzare il browser');
                 if (this.authCheckInterval) {
@@ -599,6 +503,8 @@ class WhatsAppWebService {
               pageValid = true;
             } catch (reinitError) {
               console.error('Errore durante la reinizializzazione del browser:', reinitError);
+              // Reimposta il flag di reinizializzazione anche in caso di errore
+              this.isReinitializing = false;
               if (this.authCheckInterval) {
                 clearInterval(this.authCheckInterval);
                 this.authCheckInterval = null;
@@ -818,6 +724,31 @@ class WhatsAppWebService {
    */
   async sendMessage(phoneNumber: string, message: string, autoSend: boolean = false): Promise<boolean> {
     try {
+      // Verifica se è in corso una reinizializzazione
+      if (this.isReinitializing) {
+        console.log('Reinizializzazione del browser in corso, invio del messaggio bloccato per prevenire duplicati');
+        this.updateNotificationStatus('failed', 'Operazione bloccata: reinizializzazione del browser in corso');
+        return false;
+      }
+      
+      // Verifica se il messaggio contiene placeholder non sostituiti
+      const placeholderRegex = /\{(first_name|last_name|appointment_date|appointment_time)\}/g;
+      const matches = message.match(placeholderRegex);
+      if (matches && matches.length > 0) {
+        console.log(`Messaggio contiene placeholder non sostituiti: ${message}`);
+        console.log(`Placeholder non sostituiti trovati: ${matches.join(', ')}`);
+        console.log('Invio bloccato per prevenire l\'invio di messaggi con placeholder non sostituiti');
+        this.updateNotificationStatus('failed', `Messaggio contiene placeholder non sostituiti: ${matches.join(', ')}`);
+        return false;
+      }
+      
+      // Verifica se il messaggio è stato inviato recentemente
+      if (this.isRecentlySent(phoneNumber, message)) {
+        console.log(`Messaggio già inviato a ${phoneNumber} recentemente, invio bloccato per prevenire duplicati`);
+        this.updateNotificationStatus('sent', 'Messaggio già inviato recentemente');
+        return true; // Restituiamo true per non far ripetere l'invio
+      }
+
       // Inizializza il servizio se non è già inizializzato
       if (!this.isReady()) {
         console.log('Servizio WhatsApp Web non inizializzato, avvio inizializzazione...');
@@ -838,6 +769,10 @@ class WhatsAppWebService {
         }
       } catch (pageError) {
         console.error('Pagina non più valida, tentativo di reinizializzazione:', pageError);
+        
+        // Imposta il flag di reinizializzazione
+        this.isReinitializing = true;
+        
         // Chiudi il browser se esiste
         if (this.browser) {
           try {
@@ -855,6 +790,10 @@ class WhatsAppWebService {
         
         // Reinizializza il browser
         const reinitialized = await this.initialize();
+        
+        // Reimposta il flag di reinizializzazione
+        this.isReinitializing = false;
+        
         if (!reinitialized) {
           console.error('Impossibile reinizializzare il browser');
           this.updateNotificationStatus('failed', 'Impossibile reinizializzare il browser WhatsApp');
@@ -910,9 +849,17 @@ class WhatsAppWebService {
       } catch (error) {
         console.error('Errore durante la navigazione a WhatsApp Web:', error);
         
-        // Se l'errore è relativo a un frame distaccato, tenta di reinizializzare
-        if (error instanceof Error && error.message.includes('detached Frame')) {
-          console.log('Rilevato errore di frame distaccato, tentativo di reinizializzazione...');
+        // Se l'errore è relativo a un frame distaccato o contesto di esecuzione distrutto
+        if (error instanceof Error && 
+            (error.message.includes('detached Frame') || 
+             error.message.includes('Execution context was destroyed'))) {
+          console.log('Rilevato errore di frame distaccato o contesto distrutto, tentativo di reinizializzazione...');
+          
+          // Imposta il flag di reinizializzazione per prevenire invii duplicati
+          this.isReinitializing = true;
+          
+          // Aggiorna lo stato della notifica per indicare che c'è un problema
+          this.updateNotificationStatus('failed', `Errore di navigazione: ${error.message}`);
           
           // Chiudi il browser se esiste
           if (this.browser) {
@@ -931,26 +878,19 @@ class WhatsAppWebService {
           
           // Reinizializza il browser
           const reinitialized = await this.initialize();
+          
+          // Reimposta il flag di reinizializzazione
+          this.isReinitializing = false;
+          
           if (!reinitialized) {
             console.error('Impossibile reinizializzare il browser dopo errore di frame distaccato');
             this.updateNotificationStatus('failed', 'Impossibile reinizializzare WhatsApp Web dopo errore');
             return false;
           }
           
-          // Riprova a navigare all'URL di WhatsApp Web
-          if (this.page) {
-            try {
-              await (this.page as Page).goto(whatsappUrl, { waitUntil: 'networkidle2', timeout: 60000 });
-            } catch (retryError) {
-              console.error('Errore durante il secondo tentativo di navigazione a WhatsApp Web:', retryError);
-              this.updateNotificationStatus('failed', 'Errore di navigazione a WhatsApp Web');
-              return false;
-            }
-          } else {
-            console.error('Pagina non disponibile dopo la reinizializzazione');
-            this.updateNotificationStatus('failed', 'Pagina WhatsApp Web non disponibile');
-            return false;
-          }
+          // Non riproviamo immediatamente a navigare, ma restituiamo false per evitare invii duplicati
+          console.log('Browser reinizializzato con successo, ma l\'invio è stato interrotto per evitare duplicati');
+          return false;
         } else {
           // Per altri tipi di errori
           this.updateNotificationStatus('failed', `Errore di navigazione: ${error instanceof Error ? error.message : 'Errore sconosciuto'}`);
@@ -968,37 +908,16 @@ class WhatsAppWebService {
         return false;
       }
       
-      // Attendi che la pagina sia caricata completamente con selettori multipli
+      // Attendi che la pagina sia caricata completamente
       try {
         console.log('Attesa caricamento pannello conversazione...');
         
-        // Definisci un array di selettori da provare in sequenza
-        const conversationSelectors = [
-          'div[data-testid="conversation-panel-wrapper"]',
-          'div[role="application"][tabindex="-1"]',
-          'div[data-testid="conversation-compose-box"]',
-          'footer',
-          'div[data-testid="conversation-compose-box-input"]',
-          'div[role="textbox"]'
-        ];
-        
-        // Prova ogni selettore con un timeout più breve
-        let selectorFound = false;
-        for (const selector of conversationSelectors) {
-          try {
-            console.log(`Tentativo con selettore: ${selector}`);
-            await this.page.waitForSelector(selector, { timeout: 15000 });
-            console.log(`Selettore trovato: ${selector}`);
-            selectorFound = true;
-            break;
-          } catch (selectorError) {
-            console.log(`Selettore non trovato: ${selector}`);
-            // Continua con il prossimo selettore
-          }
-        }
-        
-        if (!selectorFound) {
-          throw new Error('Nessun selettore di conversazione trovato');
+        // Attendi che il footer sia visibile (indicatore che la pagina è caricata)
+        try {
+          await this.page.waitForSelector('footer', { timeout: 15000 });
+          console.log('Footer trovato, pagina caricata');
+        } catch (footerError) {
+          console.log('Footer non trovato, continuo comunque');
         }
         
         // Attendi un momento extra per assicurarsi che la pagina sia completamente caricata
@@ -1006,21 +925,14 @@ class WhatsAppWebService {
         
         // Verifica se la pagina contiene elementi tipici di WhatsApp Web
         const pageContent = await this.page.evaluate(() => {
-          const html = document.documentElement.innerHTML;
           return {
             hasTextbox: !!document.querySelector('div[role="textbox"]'),
             hasFooter: !!document.querySelector('footer'),
-            hasComposeBox: !!document.querySelector('div[data-testid="conversation-compose-box"]'),
-            hasConversationPanel: !!document.querySelector('div[data-testid="conversation-panel-wrapper"]'),
             title: document.title
           };
         });
         
         console.log('Stato elementi pagina:', JSON.stringify(pageContent));
-        
-        if (!pageContent.hasTextbox && !pageContent.hasComposeBox && !pageContent.hasConversationPanel) {
-          throw new Error('Elementi di conversazione non trovati nella pagina');
-        }
       } catch (error) {
         // Cattura uno screenshot per debug
         await this.captureDebugScreenshot('conversation-panel-error');
@@ -1064,102 +976,75 @@ class WhatsAppWebService {
       // Se autoSend è true, tenta di inviare automaticamente il messaggio
       if (autoSend) {
         // Attendi un momento per assicurarsi che la pagina sia completamente caricata
-        await new Promise(resolve => setTimeout(resolve, 8000)); // Aumentato a 8 secondi per garantire il caricamento completo
+        await new Promise(resolve => setTimeout(resolve, 5000)); // 5 secondi sono sufficienti
         
         console.log('Tentativo di invio automatico del messaggio...');
         
         // Cattura uno screenshot per debug prima del tentativo di invio
         await this.captureDebugScreenshot('pre-send-attempt');
         
-        // Definisci un array di selettori per la casella di testo
-        const inputSelectors = [
-          'div[data-testid="conversation-compose-box-input"]',
-          'div[role="textbox"]',
-          'div[contenteditable="true"]',
-          'div[data-tab="10"]',
-          'div[spellcheck="true"]'
-        ];
-        
         // Verifica se il messaggio è già stato inserito nella casella di testo
         let messageContent = null;
-        for (const selector of inputSelectors) {
-          try {
-            messageContent = await this.page.evaluate((sel) => {
-              const inputElement = document.querySelector(sel);
-              return inputElement ? inputElement.textContent : null;
-            }, selector);
-            
-            if (messageContent !== null) {
-              console.log(`Contenuto rilevato nella casella di testo (${selector}): ${messageContent || 'vuoto'}`);
-              break;
-            }
-          } catch (error) {
-            console.log(`Errore durante la verifica del contenuto con selettore ${selector}:`, error);
-          }
+        try {
+          messageContent = await this.page.evaluate(() => {
+            const inputElement = document.querySelector('div[role="textbox"]');
+            return inputElement ? inputElement.textContent : null;
+          });
+          
+          console.log(`Contenuto rilevato nella casella di testo (div[role="textbox"]): ${messageContent || 'vuoto'}`);
+        } catch (error) {
+          console.log(`Errore durante la verifica del contenuto della casella di testo:`, error);
         }
         
-        // Definisci un array di selettori per il pulsante di invio
-        const sendButtonSelectors = [
-          'span[data-testid="send"]',
-          'button[data-testid="compose-btn-send"]',
-          'button[aria-label="Invia"]',
-          'button[aria-label="Send"]',
-          'button[title="Invia"]',
-          'button[title="Send"]',
-          'span[data-icon="send"]',
-          'div[role="button"][aria-label*="Invia"]',
-          'div[role="button"][aria-label*="Send"]'
-        ];
+        // Cerca solo il pulsante di invio con il selettore specifico richiesto
+        const sendButtonSelector = 'button[aria-label="Invia"]';
         
         // Verifica se il pulsante di invio è visibile e attivo
-        let sendButtonInfo = { found: false, selector: '', isVisible: false, isEnabled: false };
+        let sendButtonInfo = { found: false, isVisible: false, isEnabled: false };
         
-        for (const selector of sendButtonSelectors) {
-          try {
-            const buttonInfo = await this.page.evaluate((sel) => {
-              const sendButton = document.querySelector(sel);
-              if (!sendButton) return { found: false, isVisible: false, isEnabled: false };
-              
-              // Verifica se il pulsante è visibile
-              const rect = sendButton.getBoundingClientRect();
-              const isVisible = rect.width > 0 && rect.height > 0;
-              
-              // Verifica se il pulsante non è disabilitato
-              const isEnabled = !sendButton.hasAttribute('disabled') && 
-                              !sendButton.classList.contains('disabled') &&
-                              window.getComputedStyle(sendButton).opacity !== '0';
-              
-              return { 
-                found: true, 
-                isVisible, 
-                isEnabled,
-                tagName: sendButton.tagName,
-                className: sendButton.className,
-                id: sendButton.id || 'nessuno',
-                ariaLabel: sendButton.getAttribute('aria-label') || 'nessuno'
-              };
-            }, selector);
+        try {
+          const buttonInfo = await this.page.evaluate((sel) => {
+            const sendButton = document.querySelector(sel);
+            if (!sendButton) return { found: false, isVisible: false, isEnabled: false };
             
-            if (buttonInfo.found) {
-              console.log(`Pulsante di invio trovato con selettore ${selector}:`, buttonInfo);
-              sendButtonInfo = { ...buttonInfo, selector };
-              break;
-            }
-          } catch (error) {
-            console.log(`Errore durante la verifica del pulsante con selettore ${selector}:`, error);
+            // Verifica se il pulsante è visibile
+            const rect = sendButton.getBoundingClientRect();
+            const isVisible = rect.width > 0 && rect.height > 0;
+            
+            // Verifica se il pulsante non è disabilitato
+            const isEnabled = !sendButton.hasAttribute('disabled') && 
+                            !sendButton.classList.contains('disabled') &&
+                            window.getComputedStyle(sendButton).opacity !== '0';
+            
+            return { 
+              found: true, 
+              isVisible, 
+              isEnabled,
+              tagName: sendButton.tagName,
+              className: sendButton.className,
+              id: sendButton.id || 'nessuno',
+              ariaLabel: sendButton.getAttribute('aria-label') || 'nessuno'
+            };
+          }, sendButtonSelector);
+          
+          if (buttonInfo.found) {
+            console.log(`Pulsante di invio trovato con selettore ${sendButtonSelector}:`, buttonInfo);
+            sendButtonInfo = buttonInfo;
           }
+        } catch (error) {
+          console.log(`Errore durante la verifica del pulsante con selettore ${sendButtonSelector}:`, error);
         }
         
         console.log(`Pulsante di invio trovato: ${sendButtonInfo.found ? 'Sì' : 'No'}, Visibile: ${sendButtonInfo.isVisible ? 'Sì' : 'No'}, Attivo: ${sendButtonInfo.isEnabled ? 'Sì' : 'No'}`);
         
-        // Metodo 1: Usa executeScript per cliccare il pulsante di invio (più affidabile del click diretto)
-        console.log('Tentativo di invio tramite script di click...');
-        try {
-          // Usa il selettore trovato o prova tutti i selettori
-          const clickResult = await this.page.evaluate((selectors, foundSelector) => {
-            // Funzione per tentare il click su un elemento
-            const attemptClick = (element: Element) => {
-              if (!element) return false;
+        // Utilizziamo un solo metodo di invio per evitare invii multipli
+        if (sendButtonInfo.found && sendButtonInfo.isVisible && sendButtonInfo.isEnabled) {
+          console.log('Tentativo di invio tramite script di click...');
+          try {
+            // Usa solo il selettore specifico per il pulsante di invio
+            const clickResult = await this.page.evaluate((selector) => {
+              const button = document.querySelector(selector);
+              if (!button) return false;
               
               try {
                 // Simula un click tramite JavaScript
@@ -1168,338 +1053,43 @@ class WhatsAppWebService {
                   cancelable: true,
                   view: window
                 });
-                element.dispatchEvent(clickEvent);
+                button.dispatchEvent(clickEvent);
                 return true;
               } catch (e) {
                 console.log(`Errore durante il click: ${e}`);
                 return false;
               }
-            };
+            }, sendButtonSelector);
             
-            // Prima prova il selettore trovato in precedenza
-            if (foundSelector) {
-              const button = document.querySelector(foundSelector);
-              if (button && attemptClick(button)) return true;
-            }
-            
-            // Altrimenti prova tutti i selettori
-            for (const selector of selectors) {
-              const button = document.querySelector(selector);
-              if (button && attemptClick(button)) return true;
-            }
-            
-            return false;
-          }, sendButtonSelectors, sendButtonInfo.selector);
-          
-          if (clickResult) {
-            console.log('Messaggio inviato tramite script di click');
-            await new Promise(resolve => setTimeout(resolve, 3000)); // Attendi più tempo per confermare l'invio
-            this.updateNotificationStatus('sent', 'Messaggio inviato con successo');
-            return true;
-          }
-        } catch (scriptError) {
-          console.error('Errore durante l\'esecuzione dello script di click:', scriptError);
-        }
-        
-        // Metodo 2: Cerca il pulsante di invio e fai clic su di esso (metodo tradizionale)
-        console.log('Tentativo di invio tramite pulsante...');
-        try {
-          // Prova tutti i selettori per il pulsante di invio
-          for (const selector of sendButtonSelectors) {
-            try {
-              // Attendi esplicitamente che il pulsante di invio sia disponibile
-              await this.page.waitForSelector(selector, { timeout: 3000 });
-              const sendButton = await this.page.$(selector);
+            if (clickResult) {
+              console.log('Messaggio inviato tramite script di click');
+              await new Promise(resolve => setTimeout(resolve, 3000)); // Attendi più tempo per confermare l'invio
               
-              if (sendButton) {
-                // Usa click con opzioni per essere più affidabile
-                await sendButton.click({ delay: 100 });
-                console.log(`Messaggio inviato tramite clic sul pulsante (${selector})`);
-                await new Promise(resolve => setTimeout(resolve, 3000)); // Attendi più tempo per confermare l'invio
-                this.updateNotificationStatus('sent', 'Messaggio inviato con successo');
-                return true;
-              }
-            } catch (selectorError) {
-              console.log(`Selettore ${selector} non trovato o non cliccabile`);
-              // Continua con il prossimo selettore
-            }
-          }
-          
-          // Se arriviamo qui, nessun selettore ha funzionato
-          console.log('Nessun pulsante di invio trovato o cliccabile')
-        } catch (clickError) {
-          console.error('Errore durante il clic sul pulsante di invio:', clickError);
-        }
-
-        // Metodo 3: Premi il tasto Enter nella casella di testo
-        console.log('Tentativo di invio tramite Enter nella casella di testo...');
-        try {
-          // Prova tutti i selettori per la casella di testo
-          for (const selector of inputSelectors) {
-            try {
-              // Attendi esplicitamente che la casella di testo sia disponibile
-              await this.page.waitForSelector(selector, { timeout: 3000 });
-              const inputField = await this.page.$(selector);
+              // Registra il messaggio come inviato
+              this.markAsSent(phoneNumber, message);
               
-              if (inputField) {
-                console.log(`Casella di testo trovata con selettore: ${selector}`);
-                
-                // Assicurati che la casella di testo abbia il focus
-                await inputField.click();
-                await inputField.focus();
-                await new Promise(resolve => setTimeout(resolve, 1000)); // Pausa più lunga dopo il focus
-                
-                // Premi Enter con un ritardo per simulare meglio l'interazione umana
-                await this.page.keyboard.press('Enter', { delay: 100 });
-                console.log(`Messaggio inviato tramite pressione del tasto Enter nella casella (${selector})`);
-                await new Promise(resolve => setTimeout(resolve, 3000)); // Attendi più tempo per confermare l'invio
-                
-                // Verifica se il messaggio è stato inviato
-                const messageStatus = await this.page.evaluate(() => {
-                  // Cerca indicatori di messaggio inviato (ad es. icone di spunta)
-                  const sentIndicators = document.querySelectorAll('span[data-testid="msg-dblcheck"], span[data-testid="msg-check"]');
-                  return sentIndicators.length > 0;
-                });
-                
-                if (messageStatus) {
-                  console.log('Rilevato indicatore di messaggio inviato');
-                }
-                
-                this.updateNotificationStatus('sent', 'Messaggio inviato con successo');
-                return true;
-              }
-            } catch (selectorError) {
-              console.log(`Selettore ${selector} non trovato o non utilizzabile`);
-              // Continua con il prossimo selettore
-            }
-          }
-          
-          // Se arriviamo qui, nessun selettore ha funzionato
-          console.log('Nessuna casella di testo trovata o utilizzabile');
-        } catch (enterError) {
-          console.error('Errore durante la pressione di Enter nella casella:', enterError);
-        }
-
-        // Metodo 4: Premi il tasto Enter direttamente sulla pagina
-        console.log('Tentativo di invio tramite Enter sulla pagina...');
-        try {
-          // Assicurati che la pagina abbia il focus
-          await this.page.evaluate(() => window.focus());
-          await new Promise(resolve => setTimeout(resolve, 1000)); // Pausa più lunga dopo il focus
-          
-          // Cattura uno screenshot prima di premere Enter
-          await this.captureDebugScreenshot('before-enter-key');
-          
-          // Premi Enter con un ritardo per simulare meglio l'interazione umana
-          await this.page.keyboard.press('Enter', { delay: 100 });
-          console.log('Messaggio inviato tramite pressione del tasto Enter sulla pagina');
-          await new Promise(resolve => setTimeout(resolve, 3000)); // Attendi più tempo per confermare l'invio
-          
-          // Cattura uno screenshot dopo aver premuto Enter
-          await this.captureDebugScreenshot('after-enter-key');
-          
-          // Verifica se il messaggio è stato inviato
-          const messageStatus = await this.page.evaluate(() => {
-            // Cerca indicatori di messaggio inviato
-            const sentIndicators = document.querySelectorAll('span[data-testid="msg-dblcheck"], span[data-testid="msg-check"], div.message-out');
-            return sentIndicators.length > 0;
-          });
-          
-          if (messageStatus) {
-            console.log('Rilevato indicatore di messaggio inviato dopo pressione Enter');
-          }
-          
-          this.updateNotificationStatus('sent', 'Messaggio inviato con successo');
-          return true;
-        } catch (pageEnterError) {
-          console.error('Errore durante la pressione di Enter sulla pagina:', pageEnterError);
-        }
-        
-        // Metodo 5: Tenta di usare shortcut CTRL+Enter
-        console.log('Tentativo di invio tramite CTRL+Enter...');
-        try {
-          await this.page.evaluate(() => window.focus());
-          await new Promise(resolve => setTimeout(resolve, 500)); // Breve pausa dopo il focus
-          
-          await this.page.keyboard.down('Control');
-          await this.page.keyboard.press('Enter', { delay: 100 });
-          await this.page.keyboard.up('Control');
-          console.log('Messaggio inviato tramite CTRL+Enter');
-          await new Promise(resolve => setTimeout(resolve, 2000)); // Attendi più tempo per confermare l'invio
-          this.updateNotificationStatus('sent', 'Messaggio inviato con successo');
-          return true;
-        } catch (ctrlEnterError) {
-          console.error('Errore durante l\'utilizzo di CTRL+Enter:', ctrlEnterError);
-        }
-        
-        // Metodo 6: Tenta di simulare l'invio tramite script diretto con approccio migliorato
-        console.log('Tentativo di invio tramite simulazione diretta avanzata...');
-        try {
-          // Cattura uno screenshot per debug prima del tentativo di invio
-          await this.captureDebugScreenshot('pre-send-attempt');
-          
-          const simulationResult = await this.page.evaluate(() => {
-            // Cerca tutti i possibili elementi che potrebbero essere il pulsante di invio
-            const possibleSendButtons = [
-              document.querySelector('span[data-testid="send"]'),
-              document.querySelector('button[data-testid="compose-btn-send"]'),
-              document.querySelector('button[aria-label="Invia"]'),
-              document.querySelector('button[aria-label="Send"]'),
-              document.querySelector('button[title="Invia"]'),
-              document.querySelector('button[title="Send"]'),
-              document.querySelector('span[data-icon="send"]'),
-              document.querySelector('div[role="button"][aria-label*="Invia"]'),
-              document.querySelector('div[role="button"][aria-label*="Send"]'),
-              document.querySelector('div[data-testid="send-container"] span'),
-              document.querySelector('footer span[data-icon="send"]'),
-              // Cerca anche per classi o attributi che potrebbero identificare il pulsante di invio
-              ...Array.from(document.querySelectorAll('button')).filter(btn => 
-                btn.textContent?.includes('Invia') || 
-                btn.textContent?.includes('Send') ||
-                btn.innerHTML?.includes('send') ||
-                btn.className?.includes('send')),
-              // Cerca anche elementi div con ruolo button
-              ...Array.from(document.querySelectorAll('div[role="button"]')).filter(btn => 
-                btn.textContent?.includes('Invia') || 
-                btn.textContent?.includes('Send') ||
-                btn.getAttribute('aria-label')?.includes('send') ||
-                btn.getAttribute('aria-label')?.includes('Invia')),
-              // Cerca elementi con icone che potrebbero essere pulsanti di invio
-              ...Array.from(document.querySelectorAll('span[data-icon], div[data-icon]')),
-              // Cerca elementi cliccabili all'interno del footer
-              ...Array.from(document.querySelectorAll('footer div[role="button"]'))
-            ].filter(Boolean); // Rimuovi elementi null o undefined
-            
-            console.log(`Trovati ${possibleSendButtons.length} possibili pulsanti di invio`);
-            
-            // Stampa informazioni sui pulsanti trovati per debug
-            possibleSendButtons.forEach((btn, index) => {
-              console.log(`Pulsante ${index}: ${btn?.tagName}, classe: ${btn?.className}, testo: ${btn?.textContent?.trim() || 'nessuno'}, aria-label: ${btn?.getAttribute('aria-label') || 'nessuno'}, data-icon: ${btn?.getAttribute('data-icon') || 'nessuno'}`);
-            });
-            
-            // Tenta di cliccare su ciascun possibile pulsante
-            for (const button of possibleSendButtons) {
-              try {
-                // Assicuriamoci che button non sia null e facciamo un cast a HTMLElement
-                if (button) {
-                  // Verifica se il pulsante è visibile
-                  const rect = button.getBoundingClientRect();
-                  const isVisible = rect.width > 0 && rect.height > 0;
-                  
-                  if (!isVisible) {
-                    console.log('Pulsante non visibile, provo il prossimo');
-                    continue;
-                  }
-                  
-                  // Prova diversi metodi di click
-                  // 1. Click standard
-                  (button as HTMLElement).click();
-                  
-                  // 2. Evento mousedown + mouseup
-                  button.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-                  button.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-                  button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-                  
-                  // 3. Evento pointerdown + pointerup
-                  button.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
-                  button.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
-                  button.dispatchEvent(new PointerEvent('click', { bubbles: true }));
-                  
-                  // 4. Evento touchstart + touchend
-                  button.dispatchEvent(new TouchEvent('touchstart', { bubbles: true }));
-                  button.dispatchEvent(new TouchEvent('touchend', { bubbles: true }));
-                  
-                  return true;
-                }
-              } catch (e) {
-                console.log(`Errore durante il click sul pulsante: ${e}`);
-                // Continua con il prossimo pulsante
-              }
-            }
-            
-            return false;
-          });
-          
-          // Cattura uno screenshot per debug dopo il tentativo di invio
-          await this.captureDebugScreenshot('post-send-attempt');
-          
-          if (simulationResult) {
-            console.log('Messaggio inviato tramite simulazione diretta avanzata');
-            await new Promise(resolve => setTimeout(resolve, 3000)); // Attendi più tempo per confermare l'invio
-            
-            // Verifica se il messaggio è stato effettivamente inviato
-            const messageStatus = await this.page.evaluate(() => {
-              // Cerca indicatori di messaggio inviato
-              const sentIndicators = document.querySelectorAll('span[data-testid="msg-dblcheck"], span[data-testid="msg-check"], div.message-out');
-              // Cerca anche se la casella di testo è vuota dopo l'invio
-              const inputEmpty = !document.querySelector('div[data-testid="conversation-compose-box-input"]')?.textContent?.trim();
-              return {
-                hasSentIndicators: sentIndicators.length > 0,
-                inputEmpty: inputEmpty
-              };
-            });
-            
-            console.log(`Verifica invio: indicatori di invio trovati: ${messageStatus.hasSentIndicators}, casella di testo vuota: ${messageStatus.inputEmpty}`);
-            
-            this.updateNotificationStatus('sent', 'Messaggio inviato con successo');
-            return true;
-          }
-        } catch (simulationError) {
-          console.error('Errore durante la simulazione diretta avanzata:', simulationError);
-        }
-        
-        // Metodo 7: Tenta di inviare il messaggio usando keyboard shortcuts e combinazioni
-        console.log('Tentativo di invio tramite combinazioni di tasti...');
-        try {
-          // Assicurati che la pagina abbia il focus
-          await this.page.evaluate(() => window.focus());
-          await new Promise(resolve => setTimeout(resolve, 500));
-          
-          // Prova diverse combinazioni di tasti comuni per l'invio
-          const keyboardShortcuts = [
-            async () => { await this.page?.keyboard.press('Enter'); },
-            async () => { 
-              await this.page?.keyboard.down('Control'); 
-              await this.page?.keyboard.press('Enter'); 
-              await this.page?.keyboard.up('Control'); 
-            },
-            async () => { 
-              await this.page?.keyboard.down('Alt'); 
-              await this.page?.keyboard.press('Enter'); 
-              await this.page?.keyboard.up('Alt'); 
-            },
-            async () => { 
-              await this.page?.keyboard.down('Shift'); 
-              await this.page?.keyboard.press('Enter'); 
-              await this.page?.keyboard.up('Shift'); 
-            }
-          ];
-          
-          for (const shortcut of keyboardShortcuts) {
-            await shortcut();
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            // Verifica se il messaggio è stato inviato
-            const messageStatus = await this.page.evaluate(() => {
-              // Cerca indicatori di messaggio inviato (ad es. icone di spunta)
-              const sentIndicators = document.querySelectorAll('span[data-testid="msg-dblcheck"], span[data-testid="msg-check"]');
-              return sentIndicators.length > 0;
-            });
-            
-            if (messageStatus) {
-              console.log('Messaggio inviato tramite combinazione di tasti');
               this.updateNotificationStatus('sent', 'Messaggio inviato con successo');
               return true;
+            } else {
+              // Se il click non è riuscito, registra l'errore
+              console.log('Click sul pulsante di invio non riuscito');
+              await this.captureDebugScreenshot('click-failed');
+              this.updateNotificationStatus('failed', 'Invio automatico fallito: click non riuscito');
+              return false;
             }
+          } catch (scriptError) {
+            console.error('Errore durante l\'esecuzione dello script di click:', scriptError);
+            await this.captureDebugScreenshot('script-error');
+            this.updateNotificationStatus('failed', 'Errore durante l\'invio del messaggio');
+            return false;
           }
-        } catch (keyboardError) {
-          console.error('Errore durante l\'utilizzo delle combinazioni di tasti:', keyboardError);
+        } else {
+          // Se il pulsante non è disponibile
+          console.log('Pulsante di invio non disponibile');
+          await this.captureDebugScreenshot('send-button-not-available');
+          this.updateNotificationStatus('failed', 'Invio automatico fallito: pulsante di invio non disponibile');
+          return false;
         }
-        
-        // Se tutti i metodi falliscono, registra l'errore
-        console.warn('Tutti i metodi automatici di invio hanno fallito');
-        this.updateNotificationStatus('failed', 'Invio automatico fallito: impossibile inviare il messaggio');
-        return false;
       }
 
       // Se autoSend è false, considera l'operazione riuscita se siamo arrivati alla pagina di chat
@@ -1513,8 +1103,8 @@ class WhatsAppWebService {
   }
 
   /**
-   * Aggiorna lo stato di una notifica nel database
-   * @param status Nuovo stato della notifica
+   * Aggiorna lo stato di una notifica in attesa nel database
+   * @param status Nuovo stato della notifica ('pending', 'sent', 'failed', 'authentication_required', ecc.)
    * @param errorMessage Messaggio di errore opzionale
    */
   private updateNotificationStatus(status: string, errorMessage?: string): void {
@@ -1545,10 +1135,18 @@ class WhatsAppWebService {
           LIMIT 1
         `;
 
-      const params = errorMessage ? [status, errorMessage] : [status];
-      const result = db.prepare(updateQuery).run(...params);
-
-      console.log(`Stato della notifica aggiornato a '${status}', righe modificate: ${result.changes}`);
+      const updateStmt = db.prepare(updateQuery);
+      
+      // Esegui l'aggiornamento con i parametri appropriati
+      const result = errorMessage
+        ? updateStmt.run(status, errorMessage)
+        : updateStmt.run(status);
+      
+      if (result.changes > 0) {
+        console.log(`Notifica aggiornata con stato: ${status}${errorMessage ? `, errore: ${errorMessage}` : ''}`);
+      } else {
+        console.log('Nessuna notifica in attesa da aggiornare');
+      }
     } catch (error) {
       console.error('Errore durante l\'aggiornamento dello stato della notifica:', error);
     }

@@ -44,6 +44,8 @@ const NotificationSender: React.FC<NotificationSenderProps> = ({
   const [customMessage, setCustomMessage] = useState<string>('');
   const [templateVariables, setTemplateVariables] = useState<Record<string, string>>({});
   const [requiredVariables, setRequiredVariables] = useState<string[]>([]);
+  const [filteredAppointments, setFilteredAppointments] = useState<any[]>([]);
+  const [hasAppointmentVariables, setHasAppointmentVariables] = useState<boolean>(false);
 
   // Reset form when dialog opens
   useEffect(() => {
@@ -57,30 +59,20 @@ const NotificationSender: React.FC<NotificationSenderProps> = ({
     }
   }, [open]);
 
-  // Handle template selection
-  const handleTemplateChange = (event: SelectChangeEvent<number>) => {
-    const templateId = event.target.value as number;
-    setSelectedTemplate(templateId);
-    
-    if (templateId) {
-      const template = templates.find(t => t.id === templateId);
-      if (template) {
-        // Extract variables from template
-        const variables = notificationService.extractTemplateVariables(template.content);
-        setRequiredVariables(variables);
-        
-        // Initialize variables with empty values
-        const initialVariables: Record<string, string> = {};
-        variables.forEach(v => {
-          initialVariables[v] = '';
-        });
-        setTemplateVariables(initialVariables);
-      }
+  // Filtra gli appuntamenti in base al paziente selezionato
+  useEffect(() => {
+    if (selectedPatient) {
+      const patientAppointments = appointments.filter(a => 
+        a.patient_id.toString() === selectedPatient
+      );
+      setFilteredAppointments(patientAppointments);
     } else {
-      setRequiredVariables([]);
-      setTemplateVariables({});
+      setFilteredAppointments([]);
     }
-  };
+  }, [selectedPatient, appointments]);
+
+  // Non utilizziamo più una funzione separata per gestire il cambio di template
+  // La logica è stata spostata direttamente nell'onChange del Select
 
   // Handle variable change
   const handleVariableChange = (variable: string, value: string) => {
@@ -92,7 +84,7 @@ const NotificationSender: React.FC<NotificationSenderProps> = ({
 
   // Handle appointment selection for auto-filling variables
   const handleAppointmentSelect = (appointmentId: string) => {
-    const appointment = appointments.find(a => a.id.toString() === appointmentId);
+    const appointment = filteredAppointments.find(a => a.id.toString() === appointmentId);
     if (appointment) {
       // Format date for better readability
       const formattedDate = new Date(appointment.date).toLocaleDateString('it-IT', {
@@ -129,14 +121,14 @@ const NotificationSender: React.FC<NotificationSenderProps> = ({
         return;
       }
 
-      let message = '';
       let notificationId = null;
+      let response;
       
       if (useTemplate && selectedTemplate) {
         const template = templates.find(t => t.id === selectedTemplate);
         if (!template) return;
         
-        // Replace variables in template
+        // Prepara le variabili per il template
         const variables = {
           ...templateVariables,
           first_name: patient.first_name,
@@ -144,39 +136,31 @@ const NotificationSender: React.FC<NotificationSenderProps> = ({
           patient_name: `${patient.first_name} ${patient.last_name}`
         };
         
-        message = notificationService.replaceTemplateVariables(template.content, variables);
-        
-        // Save notification to database
-        const response = await axios.post('http://localhost:3001/api/notifications/template', {
+        // Salva la notifica nel database e la elabora in un'unica chiamata
+        // Questo evita il doppio invio del messaggio
+        console.log('Invio notifica con template...');
+        response = await axios.post('http://localhost:3001/api/notifications/template', {
           user_id: selectedPatient,
           template_id: selectedTemplate,
           variables: variables,
-          appointment_id: templateVariables['appointment_id'] || null
+          appointment_id: templateVariables['appointment_id'] || null,
+          process_immediately: true // Indica al backend di elaborare immediatamente la notifica
         });
-        
-        if (response.data && response.data.id) {
-          notificationId = response.data.id;
-        }
       } else {
-        message = customMessage;
-        
-        // Save notification to database
-        const response = await axios.post('http://localhost:3001/api/notifications', {
+        // Salva la notifica con messaggio personalizzato nel database
+        console.log('Invio notifica con messaggio personalizzato...');
+        response = await axios.post('http://localhost:3001/api/notifications', {
           patient_id: selectedPatient,
-          message: message
+          message: customMessage,
+          process_immediately: true // Indica al backend di elaborare immediatamente la notifica
         });
-        
-        if (response.data && response.data.id) {
-          notificationId = response.data.id;
-        }
       }
-
-      // Send WhatsApp notification
-      await notificationService.sendWhatsAppNotification(phoneNumber, message);
       
-      // Aggiorna lo stato della notifica nel database
-      if (notificationId) {
-        await axios.post(`http://localhost:3001/api/notifications/process/${notificationId}`);
+      if (response.data && response.data.id) {
+        notificationId = response.data.id;
+        console.log(`Notifica ${notificationId} inviata con successo`);
+      } else {
+        console.error('Impossibile elaborare la notifica: risposta non valida dal server');
       }
       
       onSend();
@@ -189,7 +173,7 @@ const NotificationSender: React.FC<NotificationSenderProps> = ({
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-      <DialogTitle>Invia nuova notifica</DialogTitle>
+      <DialogTitle>Invia nuova notificaaaa</DialogTitle>
       <DialogContent>
         <FormControl fullWidth sx={{ mt: 2, mb: 2 }}>
           <InputLabel>Utente</InputLabel>
@@ -225,7 +209,55 @@ const NotificationSender: React.FC<NotificationSenderProps> = ({
               <Select
                 value={selectedTemplate}
                 label="Template"
-                onChange={handleTemplateChange}
+                onChange={(e) => {
+                  console.log('Select onChange chiamata', e.target.value);
+                  // Converti il valore in numero se non è una stringa vuota
+                  const templateId = e.target.value === '' ? '' : Number(e.target.value);
+                  
+                  // Aggiorna lo stato del template selezionato
+                  setSelectedTemplate(templateId);
+                  
+                  // Trova il template selezionato
+                  if (templateId !== '') {
+                    const template = templates.find(t => t.id === templateId);
+                    if (template) {
+                      console.log('Template trovato:', template.name);
+                      
+                      // Estrai le variabili dal template
+                      const variables = notificationService.extractTemplateVariables(template.content);
+                      console.log('Template content:', template.content);
+                      console.log('Extracted variables:', variables);
+                      
+                      // Filtra le variabili standard che non richiedono input manuale
+                      const filteredVariables = variables.filter(v => 
+                        !['first_name', 'last_name', 'patient_name', 'clinic_name'].includes(v)
+                      );
+                      
+                      // Mostra sempre la select degli appuntamenti quando un template è selezionato
+                      // Non facciamo più controlli sul contenuto del template
+                      console.log('Mostrando sempre la select degli appuntamenti per il template selezionato');
+                      
+                      // Imposta lo stato per mostrare la select degli appuntamenti
+                      setHasAppointmentVariables(true);
+                      
+                      setRequiredVariables(filteredVariables);
+                      
+                      // Initialize variables with empty values
+                      const initialVariables: Record<string, string> = {};
+                      filteredVariables.forEach(v => {
+                        initialVariables[v] = '';
+                      });
+                      setTemplateVariables(initialVariables);
+                      
+                      console.log(`Variabili rilevate nel template: ${filteredVariables.join(', ')}`);
+                    }
+                  } else {
+                    // Reset degli stati quando non è selezionato alcun template
+                    setRequiredVariables([]);
+                    setTemplateVariables({});
+                    setHasAppointmentVariables(false);
+                  }
+                }}
               >
                 <MenuItem value="">
                   <em>Seleziona un template</em>
@@ -243,37 +275,36 @@ const NotificationSender: React.FC<NotificationSenderProps> = ({
               )}
             </FormControl>
             
-            {requiredVariables.length > 0 && (
+            {selectedTemplate && (
               <Box sx={{ mb: 2 }}>
                 <Typography variant="subtitle1" gutterBottom>
                   Variabili del template
                 </Typography>
                 
-                {/* Selezione appuntamento per compilazione automatica */}
-                {(templates.find(t => t.id === selectedTemplate)?.type === 'appointment_update' || 
-                 templates.find(t => t.id === selectedTemplate)?.type === 'appointment_cancellation' ||
-                 templates.find(t => t.id === selectedTemplate)?.type === 'appointment_confirmation') && (
-                  <FormControl fullWidth sx={{ mb: 2 }}>
-                    <InputLabel>Seleziona Appuntamento</InputLabel>
-                    <Select
-                      value={templateVariables['appointment_id'] || ''}
-                      label="Seleziona Appuntamento"
-                      onChange={(e) => handleAppointmentSelect(e.target.value as string)}
-                    >
-                      <MenuItem value="">
-                        <em>Seleziona un appuntamento</em>
+                {/* Mostra sempre la selezione appuntamento quando si usa un template */}
+                <FormControl fullWidth sx={{ mb: 2 }}>
+                  <InputLabel>Seleziona Appuntamento</InputLabel>
+                  <Select
+                    value={templateVariables['appointment_id'] || ''}
+                    label="Seleziona Appuntamento"
+                    onChange={(e) => handleAppointmentSelect(e.target.value as string)}
+                    disabled={filteredAppointments.length === 0} // Disabilitata solo se non ci sono appuntamenti
+                  >
+                    <MenuItem value="">
+                      <em>Seleziona un appuntamento</em>
+                    </MenuItem>
+                    {filteredAppointments.map((appointment) => (
+                      <MenuItem key={appointment.id} value={appointment.id.toString()}>
+                        {appointment.title || 'Appuntamento'} - {new Date(appointment.date).toLocaleDateString('it-IT')} {appointment.time}
                       </MenuItem>
-                      {appointments.map((appointment) => (
-                        <MenuItem key={appointment.id} value={appointment.id.toString()}>
-                          {appointment.title || 'Appuntamento'} - {new Date(appointment.date).toLocaleDateString('it-IT')} {appointment.time}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                    <FormHelperText>
-                      Seleziona un appuntamento esistente per compilare automaticamente i campi
-                    </FormHelperText>
-                  </FormControl>
-                )}
+                    ))}
+                  </Select>
+                  <FormHelperText>
+                    {filteredAppointments.length > 0 
+                      ? 'Seleziona un appuntamento esistente per compilare automaticamente i campi' 
+                      : 'Nessun appuntamento disponibile per questo paziente'}
+                  </FormHelperText>
+                </FormControl>
                 
                 {/* Campi per le variabili */}
                 {requiredVariables.map((variable) => {

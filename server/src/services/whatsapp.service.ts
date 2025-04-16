@@ -51,11 +51,14 @@ class WhatsAppService {
             return true;
           }
           
-          // Se fallisce, continua con il metodo standard
-          console.log('WhatsApp Web sending failed, falling back to standard method');
+          // Se fallisce, NON continuare con il metodo standard ma restituisci false
+          // per evitare il doppio invio del messaggio
+          console.log('WhatsApp Web sending failed, returning false');
+          return false;
         } catch (webError) {
           console.error('Error using WhatsApp Web service:', webError);
-          // Continua con il metodo standard
+          // NON continuare con il metodo standard ma restituisci false
+          return false;
         }
       }
       

@@ -175,7 +175,8 @@ export const createNotification = async (req: Request, res: Response) => {
       message, 
       template_id,
       appointment_id,
-      variables
+      variables,
+      process_immediately // Nuovo parametro per elaborare immediatamente la notifica
     } = req.body;
     
     // Validate required fields
@@ -270,6 +271,111 @@ export const createNotification = async (req: Request, res: Response) => {
       LEFT JOIN appointment_types at ON a.appointment_type_id = at.id
       WHERE n.id = ?
     `).get(notificationId) as Notification;
+    
+    // Se richiesto, elabora immediatamente la notifica
+    if (process_immediately) {
+      console.log(`Elaborazione immediata della notifica ${notificationId} richiesta`); 
+      
+      try {
+        // Ottieni il numero di telefono dell'utente
+        const user = db.prepare('SELECT phone FROM users WHERE id = ?').get(user_id) as { phone: string };
+        
+        if (!user || !user.phone) {
+          console.error(`Utente ${user_id} non ha un numero di telefono valido`);
+          return res.status(400).json({ 
+            message: 'Utente senza numero di telefono valido',
+            notification_id: notificationId
+          });
+        }
+        
+        // Formatta il numero di telefono
+        let formattedNumber = user.phone.replace(/\D/g, '');
+        if (!formattedNumber.startsWith('39')) {
+          formattedNumber = '39' + formattedNumber;
+        }
+        
+        // Importa il servizio WhatsApp Web
+        const { default: WhatsAppWebService } = await import('../services/whatsapp-web.service');
+        
+        // Inizializza il servizio se necessario
+        if (!WhatsAppWebService.isReady()) {
+          await WhatsAppWebService.initialize();
+        }
+        
+        // Verifica autenticazione
+        if (!WhatsAppWebService.isUserAuthenticated()) {
+          const isAuthenticated = await WhatsAppWebService.checkAuthenticationStatus();
+          if (!isAuthenticated) {
+            // Aggiorna lo stato della notifica
+            db.prepare(`
+              UPDATE notifications SET
+              status = 'authentication_required',
+              error_message = 'Autenticazione WhatsApp Web richiesta',
+              updated_at = CURRENT_TIMESTAMP
+              WHERE id = ?
+            `).run(notificationId);
+            
+            return res.status(202).json({
+              ...newNotification,
+              status: 'authentication_required',
+              message: 'Autenticazione WhatsApp Web richiesta'
+            });
+          }
+        }
+        
+        // Invia il messaggio
+        const success = await WhatsAppWebService.sendMessage(formattedNumber, finalMessage, true);
+        
+        if (success) {
+          // Aggiorna lo stato della notifica a 'sent'
+          db.prepare(`
+            UPDATE notifications SET
+            status = 'sent',
+            sent_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `).run(notificationId);
+          
+          return res.status(201).json({
+            ...newNotification,
+            status: 'sent',
+            message: 'Notifica inviata con successo'
+          });
+        } else {
+          // Aggiorna lo stato della notifica a 'failed'
+          db.prepare(`
+            UPDATE notifications SET
+            status = 'failed',
+            error_message = 'Invio fallito',
+            updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `).run(notificationId);
+          
+          return res.status(201).json({
+            ...newNotification,
+            status: 'failed',
+            error_message: 'Invio fallito'
+          });
+        }
+      } catch (processError: any) {
+        console.error('Errore durante l\'elaborazione immediata della notifica:', processError);
+        
+        // Aggiorna lo stato della notifica a 'failed'
+        db.prepare(`
+          UPDATE notifications SET
+          status = 'failed',
+          error_message = ?,
+          updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(processError.message || 'Errore sconosciuto', notificationId);
+        
+        return res.status(201).json({
+          ...newNotification,
+          status: 'failed',
+          error_message: processError.message || 'Errore sconosciuto'
+        });
+      }
+    }
     
     return res.status(201).json(newNotification);
   } catch (error: any) {
@@ -551,25 +657,84 @@ export const processSingleNotification = async (req: Request, res: Response) => 
         settings[setting.key] = setting.value;
       });
       
-      // Qui si integrerebbe con il servizio di messaggistica WhatsApp
-      // Per ora, segniamo semplicemente come inviata
+      // Forza l'utilizzo di WhatsApp Web con Chrome for Testing
+      const useWhatsAppWeb = true; // Ignora la variabile d'ambiente e usa sempre Chrome for Testing
+      let success = false;
+      
       console.log(`Invio notifica WhatsApp al numero ${formattedNumber}: ${notification.message}`);
       
-      // Aggiorna lo stato della notifica
-      const updateStmt = db.prepare(`
-        UPDATE notifications SET
-          status = 'sent',
-          updated_at = datetime('now')
-        WHERE id = ?
-      `);
+      if (useWhatsAppWeb) {
+        // Importa il servizio di automazione WhatsApp Web
+        const { default: WhatsAppWebService } = await import('../services/whatsapp-web.service');
+        
+        // Inizializza il servizio WhatsApp Web se non è già inizializzato
+        if (!WhatsAppWebService.isReady()) {
+          console.log(`Inizializzazione del servizio WhatsApp Web`);
+          await WhatsAppWebService.initialize();
+        }
+        
+        // Verifica lo stato di autenticazione
+        if (!WhatsAppWebService.isUserAuthenticated()) {
+          const isAuthenticated = await WhatsAppWebService.checkAuthenticationStatus();
+          if (!isAuthenticated) {
+            // Aggiorna la notifica con lo stato 'authentication_required'
+            db.prepare(`
+              UPDATE notifications SET
+                status = 'authentication_required',
+                error_message = 'Autenticazione WhatsApp Web richiesta',
+                updated_at = datetime('now')
+              WHERE id = ?
+            `).run(id);
+            
+            return res.status(202).json({
+              id: notification.id,
+              status: 'authentication_required',
+              message: 'Autenticazione WhatsApp Web richiesta. Scansiona il codice QR nella finestra di Chrome for Testing.'
+            });
+          }
+        }
+        
+        // Utilizza WhatsApp Web per inviare il messaggio
+        success = await WhatsAppWebService.sendMessage(formattedNumber, notification.message, true);
+      } else {
+        // Questo ramo non verrà mai eseguito poiché useWhatsAppWeb è sempre true
+        // Ma lo manteniamo per compatibilità con il codice esistente
+        console.log('Utilizzo forzato di WhatsApp Web con Chrome for Testing');
+        const { default: WhatsAppWebService } = await import('../services/whatsapp-web.service');
+        success = await WhatsAppWebService.sendMessage(formattedNumber, notification.message, true);
+      }
       
-      updateStmt.run(id);
-      
-      return res.json({
-        id: notification.id,
-        status: 'sent',
-        message: 'Notifica WhatsApp inviata con successo'
-      });
+      if (success) {
+        // Aggiorna lo stato della notifica a 'sent'
+        db.prepare(`
+          UPDATE notifications SET
+            status = 'sent',
+            error_message = NULL,
+            updated_at = datetime('now')
+          WHERE id = ?
+        `).run(id);
+        
+        return res.json({
+          id: notification.id,
+          status: 'sent',
+          message: 'Notifica WhatsApp inviata con successo'
+        });
+      } else {
+        // Aggiorna lo stato della notifica a 'failed'
+        db.prepare(`
+          UPDATE notifications SET
+            status = 'failed',
+            error_message = 'Invio fallito',
+            updated_at = datetime('now')
+          WHERE id = ?
+        `).run(id);
+        
+        return res.status(500).json({
+          id: notification.id,
+          status: 'failed',
+          error: 'Invio fallito'
+        });
+      }
     } catch (error: any) {
       const updateStmt = db.prepare(`
         UPDATE notifications SET
@@ -696,7 +861,8 @@ export const createNotificationFromTemplate = async (req: Request, res: Response
       user_id, 
       template_id,
       appointment_id,
-      variables
+      variables,
+      process_immediately // Nuovo parametro per elaborare immediatamente la notifica
     } = req.body;
     
     // Validate required fields
@@ -804,6 +970,111 @@ export const createNotificationFromTemplate = async (req: Request, res: Response
       LEFT JOIN appointment_types at ON a.appointment_type_id = at.id
       WHERE n.id = ?
     `).get(notificationId) as Notification;
+    
+    // Se richiesto, elabora immediatamente la notifica
+    if (process_immediately) {
+      console.log(`Elaborazione immediata della notifica ${notificationId} richiesta`); 
+      
+      try {
+        // Ottieni il numero di telefono dell'utente
+        const user = db.prepare('SELECT phone FROM users WHERE id = ?').get(user_id) as { phone: string };
+        
+        if (!user || !user.phone) {
+          console.error(`Utente ${user_id} non ha un numero di telefono valido`);
+          return res.status(400).json({ 
+            message: 'Utente senza numero di telefono valido',
+            notification_id: notificationId
+          });
+        }
+        
+        // Formatta il numero di telefono
+        let formattedNumber = user.phone.replace(/\D/g, '');
+        if (!formattedNumber.startsWith('39')) {
+          formattedNumber = '39' + formattedNumber;
+        }
+        
+        // Importa il servizio WhatsApp Web
+        const { default: WhatsAppWebService } = await import('../services/whatsapp-web.service');
+        
+        // Inizializza il servizio se necessario
+        if (!WhatsAppWebService.isReady()) {
+          await WhatsAppWebService.initialize();
+        }
+        
+        // Verifica autenticazione
+        if (!WhatsAppWebService.isUserAuthenticated()) {
+          const isAuthenticated = await WhatsAppWebService.checkAuthenticationStatus();
+          if (!isAuthenticated) {
+            // Aggiorna lo stato della notifica
+            db.prepare(`
+              UPDATE notifications SET
+              status = 'authentication_required',
+              error_message = 'Autenticazione WhatsApp Web richiesta',
+              updated_at = CURRENT_TIMESTAMP
+              WHERE id = ?
+            `).run(notificationId);
+            
+            return res.status(202).json({
+              ...newNotification,
+              status: 'authentication_required',
+              message: 'Autenticazione WhatsApp Web richiesta'
+            });
+          }
+        }
+        
+        // Invia il messaggio
+        const success = await WhatsAppWebService.sendMessage(formattedNumber, finalMessage, true);
+        
+        if (success) {
+          // Aggiorna lo stato della notifica a 'sent'
+          db.prepare(`
+            UPDATE notifications SET
+            status = 'sent',
+            sent_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `).run(notificationId);
+          
+          return res.status(201).json({
+            ...newNotification,
+            status: 'sent',
+            message: 'Notifica inviata con successo'
+          });
+        } else {
+          // Aggiorna lo stato della notifica a 'failed'
+          db.prepare(`
+            UPDATE notifications SET
+            status = 'failed',
+            error_message = 'Invio fallito',
+            updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `).run(notificationId);
+          
+          return res.status(201).json({
+            ...newNotification,
+            status: 'failed',
+            error_message: 'Invio fallito'
+          });
+        }
+      } catch (processError: any) {
+        console.error('Errore durante l\'elaborazione immediata della notifica:', processError);
+        
+        // Aggiorna lo stato della notifica a 'failed'
+        db.prepare(`
+          UPDATE notifications SET
+          status = 'failed',
+          error_message = ?,
+          updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(processError.message || 'Errore sconosciuto', notificationId);
+        
+        return res.status(201).json({
+          ...newNotification,
+          status: 'failed',
+          error_message: processError.message || 'Errore sconosciuto'
+        });
+      }
+    }
     
     return res.status(201).json(newNotification);
   } catch (error: any) {
