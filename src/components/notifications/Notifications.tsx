@@ -153,13 +153,35 @@ const Notifications: React.FC = () => {
   const [requiredVariables, setRequiredVariables] = useState<string[]>([]);
   const [useTemplate, setUseTemplate] = useState<boolean>(false);
   
-  // Stato per gli appuntamenti
+  // Stato per gli appuntamenti filtrati per utente selezionato nel dialog
+  const [filteredAppointments, setFilteredAppointments] = useState<any[]>([]);
+  
+  // Stato per gli appuntamenti (sembra ridondante, verificare se necessario o rimuovere)
   const [appointments, setAppointments] = useState<any[]>([]);
   
   // Stato per l'invio automatico di WhatsApp
   const [autoSendWhatsApp, setAutoSendWhatsApp] = useState<boolean>(false);
 
+  // Stato per il nome della clinica
+  const [clinicName, setClinicName] = useState<string>('');
+
   // Effetto per reagire ai cambiamenti dei filtri
+
+  // Fetch clinic name on component mount
+  useEffect(() => {
+    const fetchClinicName = async () => {
+      try {
+        const response = await axios.get('http://localhost:3001/api/settings/general');
+        if (response.data && response.data.clinicName) {
+          setClinicName(response.data.clinicName);
+          console.log('Fetched clinic name:', response.data.clinicName); // Log clinic name
+        }
+      } catch (error) {
+        console.error('Error fetching clinic name:', error);
+      }
+    };
+    fetchClinicName();
+  }, []);
 
   const fetchNotifications = useCallback(async () => {
     setLoading(true);
@@ -281,29 +303,66 @@ const Notifications: React.FC = () => {
   };
 
   // Funzione per caricare gli appuntamenti
-  const fetchAppointments = async (userId = '') => {
+  const fetchAppointments = async (userId = ''): Promise<any[]> => {
     try {
       let url = 'http://localhost:3001/api/appointments';
+      const params: Record<string, string> = {};
+
+      console.log('User:', userId);
+      
+      // Se userId è fornito, usa l'endpoint specifico per paziente
       if (userId) {
-        url += `?patient_id=${userId}`;
+        url = `http://localhost:3001/api/appointments/patient/${userId}`;
+      } else {
+        // Altrimenti, potresti voler aggiungere altri parametri generali qui se necessario
+        // Esempio: params['status'] = 'scheduled';
       }
-      const response = await axios.get(url);
-      setAppointments(response.data);
+      
+      // Esegui la richiesta GET. Se l'URL è stato modificato per includere userId, non servono parametri aggiuntivi per quello.
+      // Se l'URL è quello generale, puoi passare i parametri qui.
+      const response = await axios.get(url, { params: Object.keys(params).length > 0 ? params : undefined });
+      console.log(`[fetchAppointments] URL: ${url}, Params: ${JSON.stringify(params)}, Response:`, response.data);
+      return response.data || []; // Restituisce i dati o un array vuoto
     } catch (error) {
       console.error('Error fetching appointments:', error);
+      setNotification({
+        open: true,
+        message: 'Errore nel caricamento degli appuntamenti per l\'utente.',
+        severity: 'error'
+      });
+      return []; // Restituisce un array vuoto in caso di errore
+    }
+  };
+
+  // Carica i dati all'avvio e quando cambiano i filtri o la paginazione
+  // Funzione per caricare le impostazioni generali (incluso il nome della clinica)
+  const fetchGeneralSettings = async () => {
+    try {
+      const response = await axios.get('http://localhost:3001/api/settings/general');
+      if (response.data && response.data.clinicName) {
+        setClinicName(response.data.clinicName);
+      }
+    } catch (error) {
+      console.error('Error fetching general settings:', error);
     }
   };
 
   // Carica i dati all'avvio e quando cambiano i filtri o la paginazione
   useEffect(() => {
     fetchPatients();
-    fetchAppointments();
+    // Carica tutti gli appuntamenti all'inizio e imposta lo stato principale
+    const loadInitialAppointments = async () => {
+      const allAppointments = await fetchAppointments();
+      setAppointments(allAppointments);
+    };
+    loadInitialAppointments();
+    fetchGeneralSettings(); // Carica anche le impostazioni generali
   }, []);
   
   // Stato per tenere traccia se il template selezionato contiene variabili di appuntamento
   const [hasAppointmentVariables, setHasAppointmentVariables] = useState(false);
   // Stato per gli appuntamenti filtrati per utente
-  const [filteredAppointments, setFilteredAppointments] = useState<any[]>([]);
+  //const [filteredAppointments, setFilteredAppointments] = useState<any[]>([]);
 
   // Gestione del dialogo per inviare una nuova notifica
   const handleOpenSendDialog = () => {
@@ -416,10 +475,31 @@ const Notifications: React.FC = () => {
   };
 
   // Funzione per gestire il cambio di utente e caricare i suoi appuntamenti
-  const handleUserChange = (userId: string) => {
+  const handleUserChange = async (userId: string) => {
     setNewNotification(prev => ({ ...prev, patient_id: userId }));
+    console.log('User changed, selected userId:', userId); // Log userId
     if (userId) {
-      fetchAppointments(userId);
+      try {
+        // Fetch appointments for the selected user
+        const response = await axios.get(`http://localhost:3001/api/appointments/patient/${userId}`);
+        // --- START DEBUG LOGGING ---
+        console.log('Raw response from API:', response);
+        console.log('Raw response.data from API:', response.data);
+        // --- END DEBUG LOGGING ---
+        // Ensure userAppointments is always an array
+        const userAppointments = Array.isArray(response.data) ? response.data : []; 
+        console.log('Fetched appointments for user:', userAppointments); // Log fetched appointments
+        setFilteredAppointments(userAppointments);
+      } catch (error) {
+        console.error('Error fetching appointments for user:', error);
+        setFilteredAppointments([]);
+        // Optionally, show an error notification to the user
+        setNotification({
+          open: true,
+          message: 'Errore nel caricamento degli appuntamenti per l\'utente.',
+          severity: 'error'
+        });
+      }
     } else {
       setFilteredAppointments([]);
     }
@@ -472,7 +552,8 @@ const Notifications: React.FC = () => {
   
   // Funzione per gestire la selezione di un appuntamento
   const handleAppointmentSelect = (appointmentId: string) => {
-    const appointment = appointments.find(a => a.id.toString() === appointmentId);
+    // Utilizza filteredAppointments invece di appointments per coerenza con la dropdown
+    const appointment = filteredAppointments.find(a => a.id.toString() === appointmentId);
     if (appointment) {
       // Formatta la data per una migliore leggibilità
       const formattedDate = new Date(appointment.appointment_date || appointment.date).toLocaleDateString('it-IT', {
@@ -831,17 +912,12 @@ const Notifications: React.FC = () => {
         setHasAppointmentVariables(true);
         
         // Se il template è per modifica o cancellazione appuntamento, carica gli appuntamenti
-        if (template.type === 'appointment_update' || template.type === 'appointment_cancellation') {
+        if (template.type === 'appointment_update' || template.type === 'appointment_cancellation'|| template.type === 'appointment_remainder') {
           fetchAppointments();
         }
         
         // Aggiorna gli appuntamenti filtrati se c'è un utente selezionato
-        if (newNotification.patient_id) {
-          const patientAppointments = appointments.filter(a => 
-            a.patient_id.toString() === newNotification.patient_id
-          );
-          setFilteredAppointments(patientAppointments);
-        }
+        // La logica è stata rimossa perché gestita da handleUserChange
       }
     } else {
       setRequiredVariables([]);
@@ -1502,7 +1578,11 @@ const Notifications: React.FC = () => {
                 
                 {/* Mostra la select per gli appuntamenti quando è selezionato un template e un utente */}
                 {selectedTemplate && newNotification.patient_id && (
-                  <FormControl fullWidth sx={{ mb: 2 }}>
+                  <FormControl
+                    fullWidth
+                    sx={{ mb: 2 }}
+                    key={`appointment-select-${newNotification.patient_id}`} // Add key based on patient_id
+                  >
                     <InputLabel>Seleziona Appuntamento</InputLabel>
                     <Select
                       value={templateVariables['appointment_id'] || ''}
@@ -1512,7 +1592,8 @@ const Notifications: React.FC = () => {
                       <MenuItem value="">
                         <em>Seleziona un appuntamento</em>
                       </MenuItem>
-                      {appointments.map((appointment) => (
+                      {/* Utilizza filteredAppointments invece di appointments, aggiungendo un controllo Array.isArray */}
+                      {Array.isArray(filteredAppointments) && filteredAppointments.map((appointment) => (
                         <MenuItem key={appointment.id} value={appointment.id.toString()}>
                           {appointment.title || 'Appuntamento'} - {new Date(appointment.appointment_date || appointment.date).toLocaleDateString('it-IT')} {appointment.appointment_time || appointment.time}
                         </MenuItem>
@@ -1524,77 +1605,7 @@ const Notifications: React.FC = () => {
                   </FormControl>
                 )}
                 
-                {requiredVariables.length > 0 && (
-                  <Box sx={{ mb: 2 }}>
-                    <Typography variant="subtitle1" gutterBottom>
-                      Variabili del template
-                    </Typography>
-                
-                {requiredVariables.map((variable) => {
-                  // Nascondi i campi che vengono compilati automaticamente quando si seleziona un appuntamento
-                  if (hasAppointmentVariables && 
-                      (variable === 'appointment_title' || variable === 'appointment_date' || 
-                       variable === 'appointment_time' || variable === 'appointment_id') && 
-                       templateVariables['appointment_id']) {
-                    return null;
-                  }
-                  
-                  // Personalizza il campo in base al tipo di variabile
-                  if (variable === 'appointment_title') {
-                    return (
-                      <TextField
-                        key={variable}
-                        label="Titolo appuntamento"
-                        fullWidth
-                        value={templateVariables[variable] || ''}
-                        onChange={(e) => handleVariableChangeAdvanced(variable, e.target.value)}
-                        margin="dense"
-                        placeholder="Es. Visita di controllo"
-                        helperText="Inserisci il titolo o il tipo di appuntamento"
-                      />
-                    );
-                  } else if (variable === 'appointment_date') {
-                    return (
-                      <TextField
-                        key={variable}
-                        label="Data appuntamento"
-                        fullWidth
-                        value={templateVariables[variable] || ''}
-                        onChange={(e) => handleVariableChangeAdvanced(variable, e.target.value)}
-                        margin="dense"
-                        placeholder="Es. 01/01/2023"
-                        helperText="Inserisci la data dell'appuntamento (formato: GG/MM/AAAA)"
-                      />
-                    );
-                  } else if (variable === 'appointment_time') {
-                    return (
-                      <TextField
-                        key={variable}
-                        label="Ora appuntamento"
-                        fullWidth
-                        value={templateVariables[variable] || ''}
-                        onChange={(e) => handleVariableChangeAdvanced(variable, e.target.value)}
-                        margin="dense"
-                        placeholder="Es. 15:30"
-                        helperText="Inserisci l'ora dell'appuntamento (formato: HH:MM)"
-                      />
-                    );
-                  } else {
-                    // Per tutte le altre variabili, usa un campo generico
-                    return (
-                      <TextField
-                        key={variable}
-                        label={variable.replace(/_/g, ' ')}
-                        fullWidth
-                        value={templateVariables[variable] || ''}
-                        onChange={(e) => handleVariableChangeAdvanced(variable, e.target.value)}
-                        margin="dense"
-                      />
-                    );
-                  }
-                })}
-                  </Box>
-                )}
+                {/* Sezione Variabili del template rimossa */}
                 
                 {selectedTemplate && (
                   <Box sx={{ mt: 2, p: 2, bgcolor: 'background.paper', borderRadius: 1, border: '1px solid #e0e0e0' }}>
@@ -1605,13 +1616,25 @@ const Notifications: React.FC = () => {
                       {templates.find(t => t.id === selectedTemplate)?.content.replace(
                         /{{([^}]+)}}/g,
                         (match, variable) => {
-                          if (variable === 'patient_name') {
+                          // Sostituzione delle variabili standard
+                          if (variable === 'first_name' || variable === 'last_name' || variable === 'patient_name') {
                             const patient = patients.find(p => p.id.toString() === newNotification.patient_id);
-                            return patient ? `${patient.first_name} ${patient.last_name}` : match;
+                            if (patient) {
+                              if (variable === 'first_name') return patient.first_name;
+                              if (variable === 'last_name') return patient.last_name;
+                              if (variable === 'patient_name') return `${patient.first_name} ${patient.last_name}`;
+                            }
+                            return match; // Se l'utente non è trovato, lascia il placeholder
                           }
-                          return templateVariables[variable] || match;
+                          // Sostituzione di clinic_name
+                          if (variable === 'clinic_name') {
+                            // Explicitly use the state variable 'clinicName'
+                            return clinicName ? clinicName : match;
+                          }
+                          // Sostituzione delle altre variabili (es. appuntamento)
+                          return templateVariables[variable] || match; // Usa le variabili del template o lascia il placeholder
                         }
-                      )}
+                      ) ?? ''}
                     </Typography>
                   </Box>
                 )}

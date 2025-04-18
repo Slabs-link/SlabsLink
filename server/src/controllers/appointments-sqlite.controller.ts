@@ -581,44 +581,61 @@ export const syncAppointmentWithGoogleCalendar = async (appointmentId: number, n
 export const getAppointmentsByPatientId = async (req: Request, res: Response) => {
   try {
     const { patientId } = req.params;
-    let pId = patientId + '.0';
+    // Rimuovi la modifica pId = patientId + '.0';
     console.log('getAppointmentsByPatientId called with patientId:', patientId);
     
-    // Validate patientId is a number
-    if (isNaN(Number(patientId))) {
+    const numericPatientId = Number(patientId);
+    // Validate patientId is a valid number
+    if (isNaN(numericPatientId)) {
       return res.status(400).json({ message: 'Invalid patient ID' });
     }
     
     const db = getDatabase();
     
+    // Semplifica la query: assumi che patient_id sia numerico o castabile
+    // Confronta direttamente con numericPatientId
     const appointments = db.prepare(`
       SELECT a.*, u.first_name || ' ' || u.last_name as patient_name, u.first_name, u.last_name,
              t.name as appointment_type_name, t.id as appointment_type_id
       FROM appointments a
-      JOIN users u ON a.patient_id = u.id OR a.patient_id = CAST(u.id AS TEXT)
+      JOIN users u ON CAST(a.patient_id AS INTEGER) = u.id 
       LEFT JOIN appointment_types t ON a.appointment_type_id = t.id
-      WHERE a.patient_id = ? OR a.patient_id = CAST(? AS TEXT)
+      WHERE CAST(a.patient_id AS INTEGER) = ? 
       ORDER BY a.date, a.time
-    `).all(pId, pId);
+    `).all(numericPatientId);
     
     // Formatta le date prima di inviarle al frontend
     const formattedAppointments = appointments.map((appointment: any) => {
-      if (appointment && appointment.date) {
-        appointment.appointment_date = appointment.date.split('T')[0];
+      // Assicurati che i campi appointment_date e appointment_time siano presenti
+      // e che siano in un formato semplice senza timezone
+      if (appointment && 'date' in appointment && appointment.date) {
+        appointment.appointment_date = appointment.date.split('T')[0]; // Estrai solo la parte della data YYYY-MM-DD
       }
-      if (appointment && appointment.time) {
-        appointment.appointment_time = appointment.time.split('T')[1]?.substring(0, 5) || appointment.time;
+      if (appointment && 'time' in appointment && appointment.time) {
+        // Usa una logica più robusta per estrarre l'ora HH:MM, gestendo diversi formati
+        const timeString = String(appointment.time);
+        const timeMatch = timeString.match(/(\d{2}:\d{2})/);
+        appointment.appointment_time = timeMatch ? timeMatch[0] : timeString; // Estrai HH:MM o usa il valore originale
       }
-      console.log('appointment:', appointment);
+      // Rimuovi il log interno alla map se non strettamente necessario per il debug finale
+      // console.log('appointment:', appointment);
       return appointment;
     });
     
-    return res.json({ appointments: formattedAppointments });
-  } catch (error: any) {
-    console.error('Error getting patient appointments:', error);
-    return res.status(500).json({ 
-      message: 'Error retrieving patient appointments', 
-      error: error.message 
+    // Log migliorato per chiarezza
+    if (!formattedAppointments || formattedAppointments.length === 0) {
+      console.log(`Nessun appuntamento trovato per patientId: ${numericPatientId}`);
+    } else {
+      console.log(`Trovati ${formattedAppointments.length} appuntamenti per patientId: ${numericPatientId}`);
+    }
+ 
++    console.log(`[Server Log] Sending ${formattedAppointments.length} appointments for patientId ${numericPatientId}. Data:`, JSON.stringify(formattedAppointments)); // Add detailed log before sending
+     return res.json(formattedAppointments);
+   } catch (error: any) {
+     console.error('Errore in getAppointmentsByPatientId:', error);
+    return res.status(500).json({
+      message: 'Errore nel recupero degli appuntamenti per ID paziente',
+      error: error.message
     });
   }
 };
@@ -833,8 +850,8 @@ export const deleteAppointment = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Error deleting appointment:', error);
     return res.status(500).json({ 
-      message: 'Error deleting appointment', 
-      error: error.message 
+      message: 'Error deleting appointment',
+      error: error.message
     });
   }
 };
@@ -1054,8 +1071,8 @@ export const updateAppointment = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Error updating appointment:', error);
     return res.status(500).json({ 
-      message: 'Error updating appointment', 
-      error: error.message 
+      message: 'Error updating appointment',
+      error: error.message
     });
   }
 };

@@ -397,27 +397,27 @@ class WhatsAppWebService {
    * Cattura uno screenshot della pagina corrente per debug
    * @param filename Nome del file per lo screenshot
    */
-  private async captureDebugScreenshot(filename: string): Promise<void> {
-    if (!this.page) return;
-    
-    try {
-      // Crea la directory se non esiste
-      const screenshotDir = path.resolve(process.cwd(), 'data', 'debug-screenshots');
-      if (!fs.existsSync(screenshotDir)) {
-        fs.mkdirSync(screenshotDir, { recursive: true });
-      }
+  // private async captureDebugScreenshot(filename: string): Promise<void> {
+  //   if (!this.page || this.page.isClosed()) {
+  //     console.warn('Pagina non disponibile per catturare lo screenshot.');
+  //     return;
+  //   }
+  //   try {
+  //     const screenshotDir = path.resolve(process.cwd(), 'data', 'debug-screenshots');
+  //     if (!fs.existsSync(screenshotDir)) {
+  //       fs.mkdirSync(screenshotDir, { recursive: true });
+  //     }
       
-      // Genera un nome file con timestamp
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const fullPath = path.join(screenshotDir, `${filename}-${timestamp}.png`);
+  //     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  //     const fullPath = path.join(screenshotDir, `${filename}-${timestamp}.png`);
       
-      // Cattura lo screenshot
-      await this.page.screenshot({ path: fullPath, fullPage: true });
-      console.log(`Screenshot di debug salvato: ${fullPath}`);
-    } catch (error) {
-      console.error('Errore durante la cattura dello screenshot di debug:', error);
-    }
-  }
+  //     // Cattura lo screenshot
+  //     await this.page.screenshot({ path: fullPath, fullPage: true });
+  //     console.log(`Screenshot di debug salvato: ${fullPath}`);
+  //   } catch (error) {
+  //     console.error('Errore durante la cattura dello screenshot di debug:', error);
+  //   }
+  // }
 
   /**
    * Attende che l'utente completi l'autenticazione tramite QR code
@@ -430,7 +430,7 @@ class WhatsAppWebService {
     }
 
     // Cattura uno screenshot iniziale per debug
-    await this.captureDebugScreenshot('auth-start');
+    // await this.captureDebugScreenshot('auth-start');
 
     return new Promise<boolean>((resolve) => {
       let elapsedTime = 0;
@@ -451,7 +451,7 @@ class WhatsAppWebService {
           
           // Cattura uno screenshot periodico per debug (ogni 5 controlli)
           if (checkCount % 5 === 0) {
-            await this.captureDebugScreenshot(`auth-check-${checkCount}`);
+            // await this.captureDebugScreenshot(`auth-check-${checkCount}`);
           }
           
           // Verifica se la pagina è ancora valida prima di procedere
@@ -526,32 +526,9 @@ class WhatsAppWebService {
             // Autenticazione completata con successo
             console.log('Autenticazione completata con successo');
             // Cattura uno screenshot finale per debug
-            await this.captureDebugScreenshot('auth-success');
-            
-            if (this.authCheckInterval) {
-              clearInterval(this.authCheckInterval);
-              this.authCheckInterval = null;
-            }
-            
-            // Aggiorna lo stato delle notifiche in attesa di autenticazione
-            await this.processAuthenticationRequiredNotifications();
-            
-            // Forza l'elaborazione immediata delle notifiche in attesa
-            this.triggerPendingNotificationsProcessing();
-            
+            // await this.captureDebugScreenshot('auth-success');
             resolve(true);
-          } else if (elapsedTime >= this.maxAuthWaitTime) {
-            // Timeout di autenticazione
-            console.log(`Timeout di autenticazione dopo ${this.maxAuthWaitTime / 1000} secondi`);
-            // Cattura uno screenshot finale per debug
-            await this.captureDebugScreenshot('auth-timeout');
-            
-            if (this.authCheckInterval) {
-              clearInterval(this.authCheckInterval);
-              this.authCheckInterval = null;
-            }
-            resolve(false);
-          } else {
+            } else {
             // Aggiorna il messaggio di log con il tempo trascorso
             console.log(`In attesa dell'autenticazione... (${Math.floor(elapsedTime / 1000)}s)`);
             
@@ -576,7 +553,7 @@ class WhatsAppWebService {
               if (!qrCodeFound) {
                 console.log('QR code non più visibile, verifica autenticazione...');
                 // Cattura uno screenshot quando il QR code scompare
-                await this.captureDebugScreenshot('qr-disappeared');
+                // await this.captureDebugScreenshot('qr-disappeared');
                 
                 // Forza un controllo aggiuntivo dell'autenticazione
                 const recheckAuth = await this.checkAuthenticationStatus(false);
@@ -935,7 +912,7 @@ class WhatsAppWebService {
         console.log('Stato elementi pagina:', JSON.stringify(pageContent));
       } catch (error) {
         // Cattura uno screenshot per debug
-        await this.captureDebugScreenshot('conversation-panel-error');
+        // await this.captureDebugScreenshot('conversation-panel-error');
         
         // Verifica se è apparso il QR code (sessione scaduta)
         const qrCode = await this.page.$('div[data-testid="qrcode"]');
@@ -981,7 +958,7 @@ class WhatsAppWebService {
         console.log('Tentativo di invio automatico del messaggio...');
         
         // Cattura uno screenshot per debug prima del tentativo di invio
-        await this.captureDebugScreenshot('pre-send-attempt');
+        // await this.captureDebugScreenshot('pre-send-attempt');
         
         // Verifica se il messaggio è già stato inserito nella casella di testo
         let messageContent = null;
@@ -1073,21 +1050,22 @@ class WhatsAppWebService {
             } else {
               // Se il click non è riuscito, registra l'errore
               console.log('Click sul pulsante di invio non riuscito');
-              await this.captureDebugScreenshot('click-failed');
+              // Cattura uno screenshot per debug
+              // await this.captureDebugScreenshot('click-failed');
               this.updateNotificationStatus('failed', 'Invio automatico fallito: click non riuscito');
               return false;
             }
           } catch (scriptError) {
-            console.error('Errore durante l\'esecuzione dello script di click:', scriptError);
-            await this.captureDebugScreenshot('script-error');
+            console.error('Errore durante l\'esecuzione dello script nella pagina:', scriptError);
+            // await this.captureDebugScreenshot('script-error');
             this.updateNotificationStatus('failed', 'Errore durante l\'invio del messaggio');
             return false;
           }
         } else {
           // Se il pulsante non è disponibile
           console.log('Pulsante di invio non disponibile');
-          await this.captureDebugScreenshot('send-button-not-available');
-          this.updateNotificationStatus('failed', 'Invio automatico fallito: pulsante di invio non disponibile');
+          // await this.captureDebugScreenshot('send-button-not-available');
+          this.updateNotificationStatus('failed', 'Invio automatico fallito: pulsante non disponibile');
           return false;
         }
       }

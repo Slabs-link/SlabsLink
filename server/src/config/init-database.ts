@@ -2,7 +2,7 @@ import BetterSqlite3 from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { getDatabase } from './database-sqlite';
-import { addGoogleCalendarFields } from '../db/migrations/add-google-calendar-fields';
+//import { addGoogleCalendarFields } from '../db/migrations/add-google-calendar-fields';
 
 // Define the Comune type
 type Comune = {

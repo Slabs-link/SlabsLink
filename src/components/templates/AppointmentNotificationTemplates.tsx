@@ -99,7 +99,7 @@ const AppointmentNotificationTemplates: React.FC = () => {
     { id: 'appointment_title', label: 'Titolo Appuntamento', variable: '{{appointment_title}}', description: 'Titolo dell\'appuntamento' },
     { id: 'appointment_date', label: 'Data Appuntamento', variable: '{{appointment_date}}', description: 'Data dell\'appuntamento' },
     { id: 'appointment_time', label: 'Ora Appuntamento', variable: '{{appointment_time}}', description: 'Ora dell\'appuntamento' },
-    { id: 'patient_name', label: 'Nome Paziente', variable: '{{patient_name}}', description: 'Nome completo del paziente' },
+    // { id: 'patient_name', label: 'Nome Paziente', variable: '{{patient_name}}', description: 'Nome completo del paziente' }, // Rimosso
     { id: 'clinic_name', label: 'Nome Studio/Azienda', variable: '{{clinic_name}}', description: 'Nome dello studio o dell\'azienda' }
   ]);
 
@@ -337,36 +337,7 @@ const AppointmentNotificationTemplates: React.FC = () => {
         <Grid container spacing={3}>
           {/* Colonna sinistra - Template predefiniti e selezione */}
           <Grid item xs={12} md={4}>
-            <ContentCard>
-              <Typography variant="h6" gutterBottom>Template Predefiniti</Typography>
-              <Box sx={{ mb: 3 }}>
-                <Button 
-                  variant="outlined" 
-                  fullWidth 
-                  sx={{ mb: 1 }}
-                  onClick={() => createPredefinedTemplate('new_appointment')}
-                >
-                  Nuovo Appuntamento
-                </Button>
-                <Button 
-                  variant="outlined" 
-                  fullWidth 
-                  sx={{ mb: 1 }}
-                  onClick={() => createPredefinedTemplate('modified_appointment')}
-                >
-                  Modifica Appuntamento
-                </Button>
-                <Button 
-                  variant="outlined" 
-                  fullWidth
-                  onClick={() => createPredefinedTemplate('cancelled_appointment')}
-                >
-                  Cancellazione Appuntamento
-                </Button>
-              </Box>
-              
-              <Divider sx={{ my: 2 }} />
-              
+            <ContentCard>            
               <Typography variant="h6" gutterBottom>Template Esistenti</Typography>
               <FormControl fullWidth sx={{ mb: 2 }}>
                 <InputLabel>Seleziona Template</InputLabel>
@@ -397,35 +368,34 @@ const AppointmentNotificationTemplates: React.FC = () => {
             </ContentCard>
           </Grid>
           
-          {/* Colonna centrale - Editor template */}
+          {/* Sezione Editor Template */}
           <Grid item xs={12} md={8}>
             <ContentCard>
-              <Typography variant="h6" gutterBottom>Editor Template</Typography>
+              <SectionTitle>Editor Template</SectionTitle>
               
               <TextField
                 label="Nome Template"
-                fullWidth
                 value={templateName}
                 onChange={(e) => setTemplateName(e.target.value)}
+                fullWidth
                 margin="normal"
                 required
               />
               
               <TextField
                 label="Descrizione"
-                fullWidth
                 value={templateDescription}
                 onChange={(e) => setTemplateDescription(e.target.value)}
+                fullWidth
                 margin="normal"
-                multiline
-                rows={2}
               />
               
-              <FormControl fullWidth margin="normal">
-                <InputLabel>Tipo Template</InputLabel>
+              <FormControl fullWidth margin="normal" required>
+                <InputLabel id="template-type-label">Tipo Template</InputLabel>
                 <Select
+                  labelId="template-type-label"
                   value={templateType}
-                  label="Tipo Template"
+                  label="Tipo Template *"
                   onChange={(e) => setTemplateType(e.target.value)}
                 >
                   <MenuItem value="appointment_confirmation">Conferma Appuntamento</MenuItem>
@@ -435,34 +405,39 @@ const AppointmentNotificationTemplates: React.FC = () => {
                 </Select>
               </FormControl>
               
-              <Box sx={{ my: 2 }}>
+              <Box mt={2} mb={1}>
                 <Typography variant="subtitle1" gutterBottom>Campi Disponibili</Typography>
-                <Paper sx={{ p: 1, display: 'flex', flexWrap: 'wrap' }}>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap' }}>
                   {availableFields.map((field) => (
-                    <Tooltip key={field.id} title={field.description}>
+                    <Tooltip key={field.id} title={field.description} placement="top">
                       <FieldChip
+                        icon={<DragIndicatorIcon />}
                         label={field.label}
                         onClick={() => insertField(field)}
-                        icon={<DragIndicatorIcon />}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('text/plain', field.variable);
+                        }}
                       />
                     </Tooltip>
                   ))}
-                </Paper>
-                <FormHelperText>Clicca su un campo per inserirlo nel template</FormHelperText>
+                </Box>
+                <Typography variant="caption" color="textSecondary">
+                  Clicca su un campo per inserirlo nel template
+                </Typography>
               </Box>
               
               <TextField
-                id="template-content"
-                inputRef={textFieldRef}
                 label="Contenuto Template"
-                fullWidth
-                value={templateContent}
-                onChange={(e) => setTemplateContent(e.target.value)}
-                margin="normal"
                 multiline
                 rows={8}
+                value={templateContent}
+                onChange={(e) => setTemplateContent(e.target.value)}
+                fullWidth
+                margin="normal"
                 required
-                placeholder="Scrivi qui il contenuto del template o inserisci i campi disponibili"
+                inputRef={textFieldRef}
+                id="template-content" // Aggiunto ID per riferimento
               />
               
               <TemplatePreview>
@@ -478,24 +453,29 @@ const AppointmentNotificationTemplates: React.FC = () => {
                   onClick={handleSaveTemplate}
                   disabled={!templateName || !templateContent}
                 >
-                  {selectedTemplate ? 'Aggiorna Template' : 'Salva Template'}
+                  {selectedTemplate ? 'Salva Modifiche' : 'Salva Template'}
                 </Button>
               </Box>
             </ContentCard>
           </Grid>
         </Grid>
-        
-        {/* Snackbar per le notifiche */}
-        <Snackbar
-          open={notification.open}
-          autoHideDuration={6000}
-          onClose={handleCloseNotification}
-        >
-          <Alert onClose={handleCloseNotification} severity={notification.severity}>
-            {notification.message}
-          </Alert>
-        </Snackbar>
       </Box>
+
+      {/* Snackbar per le notifiche */}
+      <Snackbar
+        open={notification.open}
+        autoHideDuration={6000}
+        onClose={() => setNotification({ ...notification, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert 
+          onClose={() => setNotification({ ...notification, open: false })} 
+          severity={notification.severity} 
+          sx={{ width: '100%' }}
+        >
+          {notification.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

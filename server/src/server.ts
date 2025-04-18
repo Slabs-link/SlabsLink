@@ -9,6 +9,7 @@ import { initializeDatabase } from './config/init-database';
 import { getDatabase } from './config/database-sqlite';
 import axios, { AxiosError } from 'axios';
 import { googleCalendarRoutes } from './routes/google-calendar.routes';
+import { runSqliteMigrations } from './db/migrations/sqlite-migrations';
 
 // Create a fresh Express app
 const app = express();
@@ -222,10 +223,29 @@ const errorMessage = (err &&
 });
 
 // Start server
-app.listen(PORT, () => {
-  logToFile(`Server running on port ${PORT}`);
-  logToFile(`Test endpoint: http://localhost:${PORT}/api/test`);
-  logToFile(`Notifications endpoints: http://localhost:${PORT}/api/notifications`);
-});
+const startServer = async () => {
+  try {
+    // Esegui le migrazioni prima di avviare il server
+    const migrationsSuccessful = await runSqliteMigrations();
+    if (!migrationsSuccessful) {
+      console.error('Migrazioni fallite. Il server non verrà avviato.');
+      process.exit(1); // Esce se le migrazioni falliscono
+    }
+
+    // Avvia il server solo se le migrazioni hanno avuto successo
+    app.listen(PORT, () => {
+      console.log(`Server in ascolto sulla porta ${PORT}`);
+      logToFile(`Test endpoint: http://localhost:${PORT}/api/test`);
+      logToFile(`Notifications endpoints: http://localhost:${PORT}/api/notifications`);
+    });
+
+  } catch (error) {
+    console.error('Errore durante l\'avvio del server o le migrazioni:', error);
+    process.exit(1);
+  }
+};
+
+// Avvia il server
+startServer();
 
 export default app;
