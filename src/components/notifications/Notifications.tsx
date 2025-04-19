@@ -165,23 +165,12 @@ const Notifications: React.FC = () => {
   // Stato per il nome della clinica
   const [clinicName, setClinicName] = useState<string>('');
 
+  // Nuovo stato per il caricamento del dialogo di invio
+  const [isSendDialogLoading, setIsSendDialogLoading] = useState(false);
+
   // Effetto per reagire ai cambiamenti dei filtri
 
-  // Fetch clinic name on component mount
-  useEffect(() => {
-    const fetchClinicName = async () => {
-      try {
-        const response = await axios.get('http://localhost:3001/api/settings/general');
-        if (response.data && response.data.clinicName) {
-          setClinicName(response.data.clinicName);
-          console.log('Fetched clinic name:', response.data.clinicName); // Log clinic name
-        }
-      } catch (error) {
-        console.error('Error fetching clinic name:', error);
-      }
-    };
-    fetchClinicName();
-  }, []);
+  // Rimosso useEffect per fetchClinicName al mount
 
   const fetchNotifications = useCallback(async () => {
     setLoading(true);
@@ -336,18 +325,38 @@ const Notifications: React.FC = () => {
 
   // Carica i dati all'avvio e quando cambiano i filtri o la paginazione
   // Funzione per caricare le impostazioni generali (incluso il nome della clinica)
-  const fetchGeneralSettings = async () => {
+  const fetchGeneralSettings = async (): Promise<string> => { // Modificato per restituire una stringa
     try {
+      console.log('[Frontend] Fetching general settings...'); // Log inizio fetch
       const response = await axios.get('http://localhost:3001/api/settings/general');
-      if (response.data && response.data.clinicName) {
-        setClinicName(response.data.clinicName);
+      console.log('[Frontend] General settings response:', response.data); // Log risposta
+      if (response.data && response.data.value) {
+        try {
+          const settingsValue = JSON.parse(response.data.value);
+          if (settingsValue && settingsValue.clinicName) {
+            console.log('[Frontend] Fetched/Refreshed clinic name:', settingsValue.clinicName); // Log aggiornato
+            return settingsValue.clinicName; // Restituisce il nome della clinica dal JSON parsato
+          } else {
+            console.log('[Frontend] Clinic name not found within the parsed settings value.');
+            return ''; // Restituisce stringa vuota se clinicName non è nel JSON
+          }
+        } catch (parseError) {
+          console.error('[Frontend] Error parsing general settings value:', parseError);
+          console.log('[Frontend] Reset clinic name due to parsing error.');
+          return ''; // Restituisce stringa vuota in caso di errore di parsing
+        }
+      } else {
+        console.log('[Frontend] General settings response or value field is missing.');
+        return ''; // Restituisce stringa vuota se la risposta o il campo value mancano
       }
     } catch (error) {
       console.error('Error fetching general settings:', error);
+      console.log('[Frontend] Reset clinic name due to fetch error.'); // Log errore
+      return ''; // Restituisce stringa vuota in caso di errore
     }
   };
 
-  // Carica i dati all'avvio e quando cambiano i filtri o la paginazione
+  // Carica i dati all'avvio
   useEffect(() => {
     fetchPatients();
     // Carica tutti gli appuntamenti all'inizio e imposta lo stato principale
@@ -356,7 +365,7 @@ const Notifications: React.FC = () => {
       setAppointments(allAppointments);
     };
     loadInitialAppointments();
-    fetchGeneralSettings(); // Carica anche le impostazioni generali
+    // Il nome della clinica viene già caricato nell'altro useEffect
   }, []);
   
   // Stato per tenere traccia se il template selezionato contiene variabili di appuntamento
@@ -365,17 +374,40 @@ const Notifications: React.FC = () => {
   //const [filteredAppointments, setFilteredAppointments] = useState<any[]>([]);
 
   // Gestione del dialogo per inviare una nuova notifica
-  const handleOpenSendDialog = () => {
-    setOpenSendDialog(true);
-    setSelectedTemplate('');
-    setTemplateVariables({});
-    setRequiredVariables([]);
-    setHasAppointmentVariables(false);
-    setUseTemplate(false);
-    setNewNotification({
-      patient_id: '',
-      message: ''
-    });
+  const handleOpenSendDialog = async () => {
+    setIsSendDialogLoading(true); // Inizia il caricamento
+    setOpenSendDialog(true); // Apri subito il dialogo (mostrerà lo stato di caricamento)
+    try {
+      // Resetta gli stati prima
+      setSelectedTemplate('');
+      setTemplateVariables({});
+      setRequiredVariables([]);
+      setHasAppointmentVariables(false);
+      setUseTemplate(false);
+      setNewNotification({
+        patient_id: '',
+        message: ''
+      });
+      setFilteredAppointments([]); // Resetta anche gli appuntamenti filtrati
+      // Non resettare clinicName qui, verrà sovrascritto dal fetch
+
+      // Recupera il nome della clinica
+      const fetchedClinicName = await fetchGeneralSettings(); // Usa la funzione esistente
+      setClinicName(fetchedClinicName); // Imposta lo stato
+      console.log('[handleOpenSendDialog] Clinic Name set:', fetchedClinicName);
+
+    } catch (error) {
+      console.error('Error preparing send dialog:', error);
+      setNotification({
+        open: true,
+        message: 'Errore nell\'apertura del dialogo di invio. Impossibile recuperare il nome della clinica.',
+        severity: 'error'
+      });
+      // Opzionalmente chiudi il dialogo in caso di errore o mantienilo aperto con il messaggio di errore
+      // setOpenSendDialog(false);
+    } finally {
+      setIsSendDialogLoading(false); // Termina il caricamento
+    }
   };
 
   const handleCloseSendDialog = () => {
@@ -994,7 +1026,8 @@ const Notifications: React.FC = () => {
             ...templateVariables,
             first_name: patient.first_name,
             last_name: patient.last_name,
-            patient_name: `${patient.first_name} ${patient.last_name}`
+            patient_name: `${patient.first_name} ${patient.last_name}`,
+            clinic_name: clinicName // Aggiungi clinicName alle variabili
           };
           console.log('🔄 Variabili per sostituzione:', variables);
           
@@ -1524,6 +1557,12 @@ const Notifications: React.FC = () => {
         >
           <DialogTitle>Invia nuova notifica</DialogTitle>
           <DialogContent>
+          {isSendDialogLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
+              <CircularProgress />
+            </Box>
+          ) : (
+            <>
             <FormControl fullWidth sx={{ mt: 2, mb: 2 }}>
               <InputLabel>Utente</InputLabel>
               <Select
@@ -1612,30 +1651,37 @@ const Notifications: React.FC = () => {
                     <Typography variant="subtitle2" gutterBottom>
                       Anteprima del messaggio
                     </Typography>
+                    {/* Non è più necessario il controllo ternario su clinicName qui, 
+                        poiché il dialogo attende il caricamento */}
                     <Typography variant="body2">
-                      {templates.find(t => t.id === selectedTemplate)?.content.replace(
-                        /{{([^}]+)}}/g,
-                        (match, variable) => {
-                          // Sostituzione delle variabili standard
-                          if (variable === 'first_name' || variable === 'last_name' || variable === 'patient_name') {
-                            const patient = patients.find(p => p.id.toString() === newNotification.patient_id);
-                            if (patient) {
-                              if (variable === 'first_name') return patient.first_name;
-                              if (variable === 'last_name') return patient.last_name;
-                              if (variable === 'patient_name') return `${patient.first_name} ${patient.last_name}`;
-                            }
-                            return match; // Se l'utente non è trovato, lascia il placeholder
+                      {(() => {
+                        const template = templates.find(t => t.id === selectedTemplate);
+                        if (!template) return '';
+
+                        const patient = patients.find(p => p.id.toString() === newNotification.patient_id);
+                        const previewVariables: Record<string, string> = {
+                          ...templateVariables,
+                          clinic_name: clinicName, // Usa direttamente lo stato clinicName aggiornato
+                          first_name: patient?.first_name || '',
+                          last_name: patient?.last_name || '',
+                          patient_name: patient ? `${patient.first_name || ''} ${patient.last_name || ''}`.trim() : '',
+                        };
+
+                        // Log aggiunto per verificare clinicName prima dell'uso nell'anteprima
+                        console.log('[Frontend] Using clinicName for preview (post-load):', clinicName);
+                        
+                        // Rimuovi le chiavi con valori vuoti se non devono sostituire nulla
+                        Object.keys(previewVariables).forEach(key => {
+                          if (previewVariables[key] === '') {
+                            // Non eliminare, ma lascia che la replace gestisca il match non trovato
                           }
-                          // Sostituzione di clinic_name
-                          if (variable === 'clinic_name') {
-                            // Explicitly use the state variable 'clinicName'
-                            return clinicName ? clinicName : match;
-                          }
-                          // Sostituzione delle altre variabili (es. appuntamento)
-                          return templateVariables[variable] || match; // Usa le variabili del template o lascia il placeholder
-                        }
-                      ) ?? ''}
+                        });
+
+                        console.log('[Anteprima] Variabili per sostituzione:', previewVariables); // Log variabili anteprima
+                        return notificationService.replaceTemplateVariables(template.content, previewVariables);
+                      })()}
                     </Typography>
+                    {/* Rimosso il blocco else che mostrava "Caricamento nome clinica..." */}
                   </Box>
                 )}
               </>
@@ -1649,16 +1695,16 @@ const Notifications: React.FC = () => {
                 onChange={(e) => setNewNotification(prev => ({ ...prev, message: e.target.value }))}
               />
             )}
+            </>
+          )}
           </DialogContent>
           <DialogActions>
             <Button onClick={handleCloseSendDialog}>Annulla</Button>
             <Button 
               onClick={handleSendNotification} 
-              variant="contained"
-              disabled={
-                !newNotification.patient_id || 
-                (useTemplate ? !selectedTemplate : !newNotification.message)
-              }
+              variant="contained" 
+              color="primary" 
+              disabled={isSendDialogLoading || (!useTemplate && !newNotification.message) || (useTemplate && !selectedTemplate) || !newNotification.patient_id}
             >
               Invia
             </Button>

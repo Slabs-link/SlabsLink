@@ -5,7 +5,8 @@ import {
   updateSetting,
   deleteSetting,
   getWhatsappSettings,
-  getCalendarSettings
+  getCalendarSettings,
+  getGeneralSettings // Added this line
 } from '../controllers/settings-sqlite.controller';
 import {
   getMedicalOfficeSettings,
@@ -20,6 +21,9 @@ const router = express.Router();
 
 // Get all settings
 router.get('/', getAllSettings);
+
+// Get general settings
+router.get('/general', getGeneralSettings);
 
 // Get whatsapp settings
 router.get('/whatsapp', getWhatsappSettings);

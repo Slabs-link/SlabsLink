@@ -75,22 +75,20 @@ export class NotificationService {
     } else {
       console.log('🔄 Utilizzo WhatsApp Web tramite API del server');
       // Usa WhatsApp Web tramite l'API del server
-      // Sostituisci il nome dell'azienda nel messaggio
-      const messageWithCompanyName = message.replace(/SlabsLink/g, this.companyName);
-      console.log(`📝 Messaggio con nome azienda sostituito: ${messageWithCompanyName}`);
+      // La sostituzione del nome azienda avviene tramite replaceTemplateVariables prima di chiamare questo metodo
       
       try {
         // Chiama l'endpoint API del server per inviare il messaggio WhatsApp
         console.log('📤 Invio richiesta al server WhatsApp...');
         console.log('📤 Payload:', {
           phoneNumber: formattedNumber,
-          message: messageWithCompanyName,
+          message: message, // Usa il messaggio originale, la sostituzione è già avvenuta
           autoSend: autoSend
         });
         
         const response = await axios.post(`${this.apiBaseUrl}/whatsapp/send`, {
           phoneNumber: formattedNumber,
-          message: messageWithCompanyName,
+          message: message, // Usa il messaggio originale
           autoSend: autoSend
         });
         
@@ -147,26 +145,22 @@ export class NotificationService {
    */
   public replaceTemplateVariables(template: string, variables: NotificationVariables): string {
     let result = template;
-    
-    // Aggiungi il nome dell'azienda alle variabili se non è già presente
-    const variablesWithClinic = {
-      ...variables,
-      clinic_name: this.companyName
-    };
-    
-    // Sostituisci il nome dell'azienda (per retrocompatibilità)
-    result = result.replace(/SlabsLink/g, this.companyName);
-    
+
     // Sostituisci le variabili nel formato {{variable}}
-    for (const [key, value] of Object.entries(variablesWithClinic)) {
+    for (const [key, value] of Object.entries(variables)) {
+      // Assicurati che il valore sia una stringa prima della sostituzione
+      const replacementValue = typeof value === 'string' ? value : '';
       const regex = new RegExp(`\{\{${key}\}\}`, 'g');
-      result = result.replace(regex, value);
+      result = result.replace(regex, replacementValue);
     }
-    
-    // Sostituisci anche le variabili nel formato {variable} (formato vecchio)
-    for (const [key, value] of Object.entries(variablesWithClinic)) {
+
+    // Sostituisci anche le variabili nel formato {variable} (formato vecchio, se necessario)
+    // Potrebbe essere rimosso se non più utilizzato
+    for (const [key, value] of Object.entries(variables)) {
+      // Assicurati che il valore sia una stringa prima della sostituzione
+      const replacementValue = typeof value === 'string' ? value : '';
       const oldFormatRegex = new RegExp(`\{${key}\}`, 'g');
-      result = result.replace(oldFormatRegex, value);
+      result = result.replace(oldFormatRegex, replacementValue);
     }
     
     return result;

@@ -47,59 +47,21 @@ export const getAllSettings = async (req: Request, res: Response) => {
 };
 
 // Get general settings
-export const getGeneralSettings = async (req: Request, res: Response) => {
+export const getGeneralSettings = (req: Request, res: Response) => {
   try {
-    const db = getDatabase();
-    
-    // Verifica se la tabella app_settings esiste
-    const tableExists = db.prepare(`
-      SELECT name FROM sqlite_master 
-      WHERE type='table' AND name='app_settings'
-    `).get();
-    
-    if (!tableExists) {
-      return res.json({ 
-        clinicName: 'SlabsLink',
-        address: '',
-        phone: '',
-        email: '',
-        website: ''
-      });
+    const db = getDatabase(); // Add this line
+    const settings = db.prepare('SELECT * FROM app_settings WHERE key = \'general\'').get();
+    if (settings) {
+      console.log('[Backend] Fetched General Settings from DB:', settings); // Log aggiunto
+      res.json(settings);
+    } else {
+      // Se non ci sono impostazioni, restituisci valori predefiniti o un oggetto vuoto
+      console.log('[Backend] No General Settings found in DB, returning defaults.'); // Log aggiunto
+      res.json({ clinicName: '', address: '', phone: '', email: '', website: '' });
     }
-    
-    const setting = db.prepare('SELECT * FROM app_settings WHERE key = ?').get('general') as AppSetting | undefined;
-    
-    if (!setting) {
-      return res.json({ 
-        clinicName: 'SlabsLink',
-        address: '',
-        phone: '',
-        email: '',
-        website: ''
-      });
-    }
-    
-    // Converti il valore JSON in oggetto JavaScript
-    let value;
-    try {
-      value = JSON.parse(setting.value);
-    } catch (error) {
-      value = {
-        clinicName: 'SlabsLink',
-        address: '',
-        phone: '',
-        email: '',
-        website: ''
-      };
-    }
-    
-    return res.json(value);
-  } catch (error: any) {
-    console.error('Error getting general settings:', error);
-    return res.status(500).json({ 
-      message: 'Error retrieving general settings', 
-      error: error.message 
-    });
+  } catch (error) {
+    console.error('Error fetching general settings:', error);
+    res.status(500).json({ message: 'Error fetching general settings' });
   }
 };
 
