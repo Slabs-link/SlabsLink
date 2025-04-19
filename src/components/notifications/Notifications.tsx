@@ -332,13 +332,17 @@ const Notifications: React.FC = () => {
       console.log('[Frontend] General settings response:', response.data); // Log risposta
       if (response.data && response.data.value) {
         try {
-          const settingsValue = JSON.parse(response.data.value);
-          if (settingsValue && settingsValue.clinicName) {
-            console.log('[Frontend] Fetched/Refreshed clinic name:', settingsValue.clinicName); // Log aggiornato
-            return settingsValue.clinicName; // Restituisce il nome della clinica dal JSON parsato
+          // Prima parse della stringa JSON esterna
+          const settingsObject = JSON.parse(response.data.value);
+          // Accedi al clinicName, potrebbe essere direttamente nell'oggetto o in un sotto-oggetto 'general'
+          const clinicName = settingsObject.clinicName || (settingsObject.general && settingsObject.general.clinicName);
+
+          if (clinicName) {
+            console.log('[Frontend] Fetched/Refreshed clinic name:', clinicName); // Log aggiornato
+            return clinicName; // Restituisce il nome della clinica
           } else {
             console.log('[Frontend] Clinic name not found within the parsed settings value.');
-            return ''; // Restituisce stringa vuota se clinicName non è nel JSON
+            return ''; // Restituisce stringa vuota se clinicName non è trovato
           }
         } catch (parseError) {
           console.error('[Frontend] Error parsing general settings value:', parseError);
@@ -1036,12 +1040,7 @@ const Notifications: React.FC = () => {
           const message = notificationService.replaceTemplateVariables(template.content, variables);
           console.log('📝 Messaggio finale:', message);
           
-          // Invia la notifica tramite WhatsApp
-          console.log('📲 Invio notifica WhatsApp...');
-          await notificationService.sendWhatsAppNotification(phoneNumber, message);
-          console.log('✅ Notifica WhatsApp inviata con successo');
-          
-          // Aggiorna lo stato della notifica nel database
+          // Aggiorna lo stato della notifica nel database (l'invio WhatsApp è gestito dal backend)
           if (response.data && response.data.id) {
             console.log(`🔄 Aggiornamento stato notifica ID: ${response.data.id}`);
             await axios.post(`http://localhost:3001/api/notifications/process/${response.data.id}`);
@@ -1117,13 +1116,7 @@ const Notifications: React.FC = () => {
       const response = await axios.post('http://localhost:3001/api/notifications', newNotification);
       console.log('📥 Risposta salvataggio notifica:', response.data);
 
-      // Invia la notifica tramite WhatsApp
-      console.log('📲 Invio notifica WhatsApp...');
-      console.log('📝 Messaggio:', newNotification.message);
-      await notificationService.sendWhatsAppNotification(phoneNumber, newNotification.message);
-      console.log('✅ Notifica WhatsApp inviata con successo');
-      
-      // Aggiorna lo stato della notifica nel database
+      // Aggiorna lo stato della notifica nel database (l'invio WhatsApp è gestito dal backend)
       if (response.data && response.data.id) {
         console.log(`🔄 Aggiornamento stato notifica ID: ${response.data.id}`);
         await axios.post(`http://localhost:3001/api/notifications/process/${response.data.id}`);
