@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Box, Typography, CircularProgress, Paper } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -9,9 +9,18 @@ const GoogleAuthCallback: React.FC = () => {
   const [message, setMessage] = useState<string>('');
   const location = useLocation();
   const navigate = useNavigate();
+  const isProcessing = useRef(false); // Aggiungi useRef per tracciare l'elaborazione
 
   useEffect(() => {
     const handleCallback = async () => {
+      console.log('[GoogleAuthCallback] Esecuzione useEffect');
+      if (isProcessing.current) {
+        console.log('[GoogleAuthCallback] Elaborazione già in corso, uscita.');
+        return; // Evita esecuzioni multiple
+      }
+      isProcessing.current = true; // Imposta il flag di elaborazione
+      console.log('[GoogleAuthCallback] Avvio elaborazione callback...');
+
       try {
         // Estrai il codice di autorizzazione dall'URL
         const searchParams = new URLSearchParams(location.search);
@@ -20,60 +29,57 @@ const GoogleAuthCallback: React.FC = () => {
         if (!code) {
           setStatus('error');
           setMessage('Codice di autorizzazione mancante nella risposta di Google');
+          isProcessing.current = false; // Resetta il flag in caso di errore precoce
           return;
         }
 
-        // Invia il codice al backend - utilizziamo axios invece di fetch per una migliore gestione degli errori
-        try {
-          const response = await fetch(`http://localhost:3001/api/google-calendar/callback?code=${code}`, {
-            method: 'GET',
-            headers: {
-              'Accept': 'application/json, text/plain, */*'
-            }
-          });
-          
-          // Verifica se la risposta è OK
-          if (!response.ok) {
-            // Prova a leggere la risposta come testo per il debug
-            const textResponse = await response.text();
-            console.log('Risposta non-OK ricevuta:', textResponse.substring(0, 100) + '...');
-            throw new Error(`Errore dal server: ${response.status} ${response.statusText}`);
+        console.log(`[GoogleAuthCallback] Codice ricevuto: ${code.substring(0, 10)}...`);
+        console.log('[GoogleAuthCallback] Invio richiesta al backend...');
+        // Invia il codice al backend
+        const response = await fetch(`http://localhost:3001/api/google-calendar/callback?code=${code}`, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json'
           }
-          
-          // Prova a leggere la risposta come JSON, ma non fallire se non è JSON
-          try {
-            await response.json();
-          } catch (jsonError) {
-            // La risposta non è JSON, ma potrebbe essere un reindirizzamento o altro
-            console.log('La risposta non è in formato JSON, ma l\'operazione potrebbe essere riuscita');
-          }
-        } catch (fetchError) {
-          console.error('Errore nella richiesta:', fetchError);
-          // Non lanciare l'errore qui, assumiamo che l'autenticazione sia andata a buon fine
-          // anche se la risposta non è quella attesa
+        });
+        console.log(`[GoogleAuthCallback] Risposta ricevuta dal backend: ${response.status}`);
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+          console.error(`[GoogleAuthCallback] Errore dal backend: ${result.message || response.statusText}`);
+          throw new Error(result.message || `Errore dal server: ${response.status} ${response.statusText}`);
         }
 
+        // Autenticazione riuscita
+        console.log('[GoogleAuthCallback] Autenticazione riuscita.');
         setStatus('success');
-        setMessage('Autenticazione con Google Calendar completata con successo!');
-        
+        setMessage(result.message || 'Autenticazione con Google Calendar completata con successo!');
+
         // Reindirizza alla pagina delle impostazioni dopo 2 secondi
         setTimeout(() => {
-          // Modifica l'URL di reindirizzamento per utilizzare il percorso corretto
-          navigate('/dashboard');
-          // Dopo un breve ritardo, naviga alle impostazioni
-          setTimeout(() => {
-            navigate('/settings?tab=calendar&auth=success');
-          }, 100);
+          // Naviga direttamente alla scheda calendario delle impostazioni
+          navigate('/settings?tab=calendar&auth=success');
         }, 2000);
       } catch (error) {
-        console.error('Errore durante il callback di autenticazione:', error);
+        console.error('[GoogleAuthCallback] Errore durante il callback di autenticazione:', error);
         setStatus('error');
-        setMessage(error instanceof Error ? error.message : 'Errore sconosciuto durante l\'autenticazione');
+        const errorMessage = error instanceof Error ? error.message : 'Errore sconosciuto durante l\'autenticazione';
+        setMessage(errorMessage);
+        // Opzionale: reindirizza alla pagina di errore o mostra un messaggio
+        setTimeout(() => {
+          navigate(`/settings?tab=calendar&auth=error&message=${encodeURIComponent(errorMessage)}`);
+        }, 3000); // Reindirizza dopo 3 secondi in caso di errore
+      } finally {
+        // Anche se non strettamente necessario resettare qui perché il componente si smonta,
+        // potrebbe essere utile in scenari futuri.
+        // isProcessing.current = false; 
       }
     };
 
     handleCallback();
-  }, [location, navigate]);
+    // Rimuovi isProcessing.current dalle dipendenze se non vuoi che il reset lo faccia rieseguire
+  }, [location, navigate]); 
 
   return (
     <Box

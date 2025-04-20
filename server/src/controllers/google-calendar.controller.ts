@@ -81,7 +81,7 @@ export const getAuthUrl = async (req: Request, res: Response) => {
     const authUrl = oauth2Client.generateAuthUrl({
       access_type: 'offline',
       scope: scopes,
-      prompt: 'consent' // Forza Google a mostrare la schermata di consenso e fornire un nuovo refresh token
+      prompt: 'consent' // Forza la richiesta di consenso e il rilascio di un nuovo refresh token
     });
     
     // Controlla se la richiesta è per /auth-url o /auth
@@ -159,11 +159,14 @@ export const handleAuthCallback = async (req: Request, res: Response) => {
         throw new Error('Il servizio Google Calendar non risulta autenticato dopo il salvataggio dei token');
       }
       
-      logMessage('Autenticazione completata con successo, reindirizzamento alla pagina delle impostazioni');
-      return res.redirect('/settings?tab=calendar&auth=success');
+      logMessage('Autenticazione completata con successo, invio risposta JSON');
+      // Invece di reindirizzare, restituisci un JSON
+      return res.json({ success: true, message: 'Autenticazione completata con successo' });
     } catch (authError) {
-      logMessage(`Errore durante l'autenticazione: ${authError instanceof Error ? authError.message : 'Unknown error'}`);
-      return res.redirect('/settings?tab=calendar&auth=error&message=' + encodeURIComponent(authError instanceof Error ? authError.message : 'Errore sconosciuto'));
+      const errorMessage = authError instanceof Error ? authError.message : 'Errore sconosciuto durante l\'autenticazione';
+      logMessage(`Errore durante l'autenticazione: ${errorMessage}`);
+      // Invece di reindirizzare, restituisci un JSON con l'errore
+      return res.status(400).json({ success: false, message: errorMessage });
     }
   } catch (error) {
     logMessage(`Error handling auth callback: ${error instanceof Error ? error.message : 'Unknown error'}`);

@@ -673,23 +673,32 @@ export class GoogleCalendarService {
       this.log('info', `Scambio del codice di autorizzazione: ${code.substring(0, 10)}...`);
       console.log('[DEBUG-CALENDAR] Tentativo di scambio codice con getToken');
       
-      // Modifica: Aggiungi il parametro prompt=consent per forzare Google a richiedere un nuovo refresh token
-      // Questo è necessario quando il refresh token precedente è stato revocato o è scaduto
-      this.oauth2Client.generateAuthUrl({
-        access_type: 'offline',
-        scope: ['https://www.googleapis.com/auth/calendar'],
-        prompt: 'consent' // Forza Google a mostrare la schermata di consenso e fornire un nuovo refresh token
-      });
+      // NOTA: La chiamata a generateAuthUrl è stata rimossa da qui.
+      // generateAuthUrl viene usato per creare l'URL a cui l'utente viene reindirizzato
+      // per l'autorizzazione iniziale, non durante lo scambio del codice.
+      // L'opzione prompt: 'consent' va impostata quando si genera l'URL di autorizzazione iniziale,
+      // non qui.
       
-      // Ottieni i token usando il codice di autorizzazione
-      const { tokens } = await this.oauth2Client.getToken(code);
-      console.log('[DEBUG-CALENDAR] Token ottenuti da Google:', {
+      let tokens: any; // Dichiarazione di tokens fuori dal blocco try
+      try {
+        // Ottieni i token usando il codice di autorizzazione
+        this.log('info', 'Tentativo di scambio del codice di autorizzazione con Google...');
+        const tokenResponse = await this.oauth2Client.getToken(code);
+        tokens = tokenResponse.tokens; // Assegna i token alla variabile dichiarata sopra
+        this.log('info', 'Scambio codice completato con successo.');
+        console.log('[DEBUG-CALENDAR] Token ottenuti da Google:', {
         hasAccessToken: !!tokens.access_token,
         accessTokenLength: tokens.access_token?.length || 0,
         hasRefreshToken: !!tokens.refresh_token,
         refreshTokenLength: tokens.refresh_token?.length || 0,
         expiryDate: tokens.expiry_date ? new Date(tokens.expiry_date).toISOString() : 'N/A'
-      });
+        });
+      } catch (tokenError) {
+        this.log('error', 'Errore durante lo scambio del codice di autorizzazione con getToken', tokenError);
+        console.error('[DEBUG-CALENDAR] Errore dettagliato da getToken:', JSON.stringify(tokenError, null, 2));
+        // Rilancia l'errore per essere gestito dal blocco catch esterno
+        throw tokenError; 
+      }
       
       // Verifica che i token siano stati ottenuti correttamente
       if (!tokens || !tokens.access_token) {
