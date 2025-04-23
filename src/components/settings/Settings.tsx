@@ -837,71 +837,11 @@ const Settings: React.FC = () => {
                 />
                 
                 <Paper sx={{ p: 3, mb: 3 }}>
-                  <Typography variant="subtitle1" fontWeight="bold" gutterBottom>Metodo di integrazione</Typography>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={whatsappSettings.useBusinessApi}
-                        onChange={handleWhatsappSettingsChange}
-                        name="useBusinessApi"
-                        disabled={!whatsappSettings.enabled}
-                      />
-                    }
-                    label="Usa WhatsApp Business API (consigliato)"
-                    sx={{ mb: 2 }}
-                  />
-                  
-                  {whatsappSettings.useBusinessApi ? (
-                    <>
-                      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                        Utilizza l'API ufficiale di WhatsApp Business per inviare messaggi senza necessità di browser.
-                      </Typography>
-                      
-                      <Grid container spacing={3}>
-                        <Grid item xs={12} md={6}>
-                          <TextField
-                            fullWidth
-                            label="Token API WhatsApp"
-                            name="apiToken"
-                            value={whatsappSettings.apiToken}
-                            onChange={handleWhatsappSettingsChange}
-                            margin="normal"
-                            disabled={!whatsappSettings.enabled || !whatsappSettings.useBusinessApi}
-                          />
-                        </Grid>
-                        <Grid item xs={12} md={6}>
-                          <TextField
-                            fullWidth
-                            label="ID Numero di Telefono"
-                            name="phoneNumberId"
-                            value={whatsappSettings.phoneNumberId}
-                            onChange={handleWhatsappSettingsChange}
-                            margin="normal"
-                            disabled={!whatsappSettings.enabled || !whatsappSettings.useBusinessApi}
-                          />
-                        </Grid>
-                        <Grid item xs={12}>
-                          <Button
-                            variant="outlined"
-                            color="primary"
-                            disabled={!whatsappSettings.enabled || !whatsappSettings.useBusinessApi || !whatsappSettings.apiToken || !whatsappSettings.phoneNumberId}
-                            sx={{ mt: 1 }}
-                          >
-                            Testa Connessione API
-                          </Button>
-                        </Grid>
-                      </Grid>
-                    </>
-                  ) : (
-                    <>
-                      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                        Utilizza WhatsApp Web tramite browser automatizzato (richiede Chrome installato).
-                      </Typography>
-                      
-                      <Grid container spacing={3}>
+                  {whatsappSettings.enabled && !whatsappSettings.useBusinessApi && (
+                      <Grid container spacing={2} sx={{ mt: 2 }}>
                         <Grid item xs={12} md={6}>
                           <FileFolderPicker
-                            label="Percorso Browser Chrome"
+                            label="Percorso Browser WhatsApp"
                             value={whatsappSettings.browserPath}
                             onChange={(value) => setWhatsappSettings({...whatsappSettings, browserPath: value})}
                             placeholder="C:\Program Files\Google\Chrome\Application\chrome.exe"
@@ -920,7 +860,6 @@ const Settings: React.FC = () => {
                           />
                         </Grid>
                       </Grid>
-                    </>
                   )}
                 </Paper>
                 
